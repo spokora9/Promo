@@ -75,9 +75,17 @@ LoCo (Location Commerce) enables shops and businesses to create targeted promoti
 
 ## Documentation
 
-- [📋 Architecture Plan](./ARCHITECTURE_PLAN.md) - Comprehensive technical architecture
+### Planning & Requirements
+- [📋 Product Requirements Document (PRD)](./PRD.md) - Complete product specifications
+- [🎨 UI/UX Design Specification](./UI_UX_DESIGN.md) - Complete design system and wireframes
+- [📅 Sprint Plan](./SPRINT_PLAN.md) - 12-week implementation roadmap
+- [🔍 Discovery Mode Specification](./DISCOVERY_MODE_SPEC.md) - Detailed feature specification
+
+### Technical
+- [🏗️ Architecture Plan](./ARCHITECTURE_PLAN.md) - Comprehensive technical architecture
 - [📁 Project Structure](./PROJECT_STRUCTURE.md) - Code organization and conventions
-- [🚀 Quick Start Guide](./QUICK_START.md) - Get up and running in minutes
+- [🚀 Quick Start Guide](./QUICK_START.md) - Original development setup guide
+- [✨ Get Started](./GET_STARTED.md) - Quick start for development (START HERE)
 
 ## Quick Start
 
