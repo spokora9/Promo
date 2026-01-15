@@ -1,0 +1,296 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ============================================================================
+// SHOPS & MERCHANTS
+// ============================================================================
+
+model Shop {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  logoUrl      String?  @map("logo_url")
+  description  String?
+  category     String?
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  locations   ShopLocation[]
+  promotions  Promotion[]
+
+  @@map("shops")
+}
+
+model ShopLocation {
+  id         String   @id @default(uuid())
+  shopId     String   @map("shop_id")
+  name       String
+  address    String
+  city       String?
+  state      String?
+  country    String?
+  postalCode String?  @map("postal_code")
+  latitude   Float
+  longitude  Float
+  phone      String?
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  shop       Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  promotions PromotionLocation[]
+
+  @@index([shopId])
+  @@index([latitude, longitude])
+  @@map("shop_locations")
+}
+
+// ============================================================================
+// PROMOTIONS
+// ============================================================================
+
+model Promotion {
+  id                    String   @id @default(uuid())
+  shopId                String   @map("shop_id")
+  title                 String
+  description           String
+  termsConditions       String?  @map("terms_conditions")
+  discountType          String?  @map("discount_type")
+  discountValue         Decimal? @map("discount_value") @db.Decimal(10, 2)
+  imageUrl              String?  @map("image_url")
+  targetType            String   @map("target_type")
+  radiusMeters          Int      @map("radius_meters")
+  startDate             DateTime @map("start_date")
+  endDate               DateTime @map("end_date")
+  isActive              Boolean  @default(true) @map("is_active")
+  maxRedemptionsPerUser Int?     @default(1) @map("max_redemptions_per_user")
+  maxTotalRedemptions   Int?     @map("max_total_redemptions")
+  currentRedemptions    Int      @default(0) @map("current_redemptions")
+
+  // Discovery Mode fields
+  isDiscoveryOffer          Boolean  @default(false) @map("is_discovery_offer")
+  discoveryBoost            Int?     @map("discovery_boost")
+  maxDiscoveryExposures     Int?     @default(5) @map("max_discovery_exposures")
+  autoConvertAfterExposures Boolean  @default(false) @map("auto_convert_after_exposures")
+
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  shop          Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  locations     PromotionLocation[]
+  views         PromotionView[]
+  redemptions   PromotionRedemption[]
+  notifications Notification[]
+
+  @@index([shopId])
+  @@index([startDate, endDate])
+  @@index([isActive])
+  @@map("promotions")
+}
+
+model PromotionLocation {
+  promotionId String @map("promotion_id")
+  locationId  String @map("location_id")
+
+  promotion Promotion    @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  location  ShopLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, locationId])
+  @@map("promotion_locations")
+}
+
+// ============================================================================
+// USERS & CUSTOMERS
+// ============================================================================
+
+model User {
+  id                        String   @id @default(uuid())
+  email                     String?  @unique
+  phone                     String?  @unique
+  firstName                 String?  @map("first_name")
+  lastName                  String?  @map("last_name")
+  passwordHash              String?  @map("password_hash")
+  avatarUrl                 String?  @map("avatar_url")
+  pushNotificationsEnabled  Boolean  @default(true) @map("push_notifications_enabled")
+  emailNotificationsEnabled Boolean  @default(true) @map("email_notifications_enabled")
+  notificationRadiusMeters  Int      @default(5000) @map("notification_radius_meters")
+  locationSharingEnabled    Boolean  @default(true) @map("location_sharing_enabled")
+
+  // Discovery Mode settings
+  discoveryModeEnabled      Boolean  @default(false) @map("discovery_mode_enabled")
+  discoveryModeType         String   @default("off") @map("discovery_mode_type") // 'off', 'active', 'silent', 'smart'
+
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+  lastLogin                 DateTime? @map("last_login")
+
+  location          UserLocation?
+  shopPreferences   UserShopPreference[]
+  promotionViews    PromotionView[]
+  redemptions       PromotionRedemption[]
+  notifications     Notification[]
+  discoveryExposures DiscoveryExposure[]
+
+  @@map("users")
+}
+
+model UserLocation {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  latitude       Float
+  longitude      Float
+  accuracyMeters Decimal? @map("accuracy_meters") @db.Decimal(10, 2)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([latitude, longitude])
+  @@map("user_locations")
+}
+
+model UserShopPreference {
+  userId               String   @map("user_id")
+  shopId               String   @map("shop_id")
+  notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
+  addedVia             String?  @map("added_via") // 'discovery_mode', 'discovery_redemption', 'manual'
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, shopId])
+  @@map("user_shop_preferences")
+}
+
+// ============================================================================
+// ANALYTICS & TRACKING
+// ============================================================================
+
+model PromotionView {
+  id                 String   @id @default(uuid())
+  promotionId        String   @map("promotion_id")
+  userId             String?  @map("user_id")
+  viewedAt           DateTime @default(now()) @map("viewed_at")
+  userDistanceMeters Int?     @map("user_distance_meters")
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([promotionId])
+  @@index([userId])
+  @@index([viewedAt])
+  @@map("promotion_views")
+}
+
+model PromotionRedemption {
+  id             String    @id @default(uuid())
+  promotionId    String    @map("promotion_id")
+  userId         String    @map("user_id")
+  shopLocationId String?   @map("shop_location_id")
+  redeemedAt     DateTime  @default(now()) @map("redeemed_at")
+  redemptionCode String    @unique @map("redemption_code")
+  isVerified     Boolean   @default(false) @map("is_verified")
+  verifiedAt     DateTime? @map("verified_at")
+
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId])
+  @@index([userId])
+  @@index([redemptionCode])
+  @@map("promotion_redemptions")
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  promotionId      String?   @map("promotion_id")
+  notificationType String    @map("notification_type")
+  status           String    @default("pending")
+  sentAt           DateTime? @map("sent_at")
+  readAt           DateTime? @map("read_at")
+  errorMessage     String?   @map("error_message")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([promotionId])
+  @@map("notifications")
+}
+
+// ============================================================================
+// DISCOVERY MODE
+// ============================================================================
+
+model DiscoveryExposure {
+  id                      String    @id @default(uuid())
+  userId                  String    @map("user_id")
+  shopId                  String    @map("shop_id")
+  promotionId             String?   @map("promotion_id")
+
+  // Exposure tracking
+  exposureCount           Int       @default(1) @map("exposure_count")
+  firstExposureAt         DateTime  @default(now()) @map("first_exposure_at")
+  lastExposureAt          DateTime  @default(now()) @map("last_exposure_at")
+
+  // Engagement tracking
+  totalViews              Int       @default(0) @map("total_views")
+  totalDismissals         Int       @default(0) @map("total_dismissals")
+  totalNotInterested      Int       @default(0) @map("total_not_interested")
+
+  // Status
+  status                  String    @default("active") @map("status") // 'active', 'grace_period', 'exhausted', 'converted'
+  gracePeriodStartedAt    DateTime? @map("grace_period_started_at")
+  exhaustedAt             DateTime? @map("exhausted_at")
+  convertedAt             DateTime? @map("converted_at")
+
+  // Redemption
+  redeemedDuringDiscovery Boolean   @default(false) @map("redeemed_during_discovery")
+  redemptionAt            DateTime? @map("redemption_at")
+
+  // Metadata
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shopId])
+  @@index([userId])
+  @@index([shopId])
+  @@index([status])
+  @@map("discovery_exposures")
+}
+
+// ============================================================================
+// WEB PUSH SUBSCRIPTIONS
+// ============================================================================
+
+model PushSubscription {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
