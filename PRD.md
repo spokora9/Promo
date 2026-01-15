@@ -697,6 +697,94 @@ As a customer, I want to save promotions for later, so I can come back to them.
 
 ---
 
+### Epic 9: Discovery Mode
+
+#### Must Have (P0)
+
+**US-9.1: Enable Discovery Mode**
+As a customer, I want to enable discovery mode, so I can explore new shops without getting overwhelmed by notifications.
+
+**Acceptance Criteria:**
+- Can choose between: Active, Silent, or Off
+- Active mode: Real-time notifications
+- Silent mode: Offers logged for later review
+- Clear explanation of each mode
+- Can change mode anytime
+
+---
+
+**US-9.2: View Discovery Feed**
+As a customer, I want to see all shops I've discovered, so I can review and add the ones I like.
+
+**Acceptance Criteria:**
+- Shows shops discovered in last 7 days
+- Grouped by: Today, Yesterday, This Week
+- Shows distance when discovered
+- Shows offer details
+- Can filter by category and distance
+- One-tap add shop
+
+---
+
+**US-9.3: Add Shop from Discovery**
+As a customer, I want to add shops from my discovery feed, so I start receiving their regular offers.
+
+**Acceptance Criteria:**
+- Prominent "Add Shop" button
+- Confirmation message
+- Immediately start receiving offers
+- Can remove shop later in settings
+
+---
+
+**US-9.4: Discovery Exposure Tracking**
+As a user, the system shall track my exposures to prevent abuse.
+
+**Acceptance Criteria:**
+- Tracks exposure count per shop
+- Shows exposure limit warnings (e.g., "3/5 exposures used")
+- Progressive reduction of offers after limit
+- Resets after 6 months of no exposure
+
+---
+
+#### Should Have (P1)
+
+**US-9.5: Smart Discovery Mode**
+As a customer, I want smart discovery that only notifies me of highly relevant offers.
+
+**Acceptance Criteria:**
+- ML-based relevance scoring
+- Only high-relevance: Real-time notification
+- Low-relevance: Silent log
+- Factors: Categories, time of day, distance, patterns
+
+---
+
+**US-9.6: Create Discovery Offer (Merchant)**
+As a business owner, I want to create special discovery offers, so I can attract new customers more effectively.
+
+**Acceptance Criteria:**
+- Toggle "Discovery Offer" when creating promotion
+- Set discovery boost (% better than regular)
+- Set max exposures per user (default: 5)
+- Set longer duration (30-90 days)
+- Choose: Discovery-only or convert after limit
+
+---
+
+**US-9.7: View Discovery Analytics (Merchant)**
+As a business owner, I want to see discovery performance, so I know if it's working.
+
+**Acceptance Criteria:**
+- Discovery impressions count
+- Add-to-favorites rate
+- Average exposures before add
+- Comparison: Discovery vs regular users
+- Cost per acquisition
+
+---
+
 ## 7. Core Features
 
 ### Phase 1: MVP Features (Must Have)
@@ -765,6 +853,13 @@ As a customer, I want to save promotions for later, so I can come back to them.
    - Quiet hours
    - Privacy settings
 
+6. **Discovery Mode** (Basic)
+   - Enable/disable discovery mode
+   - Active vs Silent mode toggle
+   - Discovery feed (view discovered shops)
+   - Add shops from discovery
+   - Exposure tracking and warnings
+
 ---
 
 ### Phase 2: Enhanced Features (Should Have)
@@ -792,6 +887,13 @@ As a customer, I want to save promotions for later, so I can come back to them.
    - Role-based permissions
    - Activity log
 
+5. **Discovery Offers**
+   - Create discovery-specific promotions
+   - Set discovery boost (enhanced offers)
+   - Configure max exposures per user
+   - Auto-convert after exposure limit
+   - Discovery analytics dashboard
+
 ---
 
 #### Customer App
@@ -810,6 +912,13 @@ As a customer, I want to save promotions for later, so I can come back to them.
    - Share promotions
    - Refer friends
    - User reviews/ratings
+
+4. **Smart Discovery Mode**
+   - AI-powered relevance filtering
+   - Intelligent notification timing
+   - Pattern-based exposure adjustments
+   - Geographic relationship detection
+   - Anti-abuse system
 
 ---
 
@@ -1882,6 +1991,7 @@ Week 20:    Soft Launch (1 city)
 - [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) - Code organization
 - [QUICK_START.md](./QUICK_START.md) - Developer setup guide
 - [README.md](./README.md) - Project overview
+- [DISCOVERY_MODE_SPEC.md](./DISCOVERY_MODE_SPEC.md) - Discovery Mode detailed specification
 
 ---
 
