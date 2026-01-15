@@ -1,10 +1,10 @@
-# PromoNear - Location-Based Promotions Platform
+# LoCo - Location Commerce Platform
 
 A modern, scalable platform connecting local businesses with nearby customers through location-based promotions and real-time notifications.
 
 ## Overview
 
-PromoNear enables shops and businesses to create targeted promotions for customers based on their proximity to store locations. Customers receive real-time notifications when they're near participating businesses, creating opportunities for increased foot traffic and sales.
+LoCo (Location Commerce) enables shops and businesses to create targeted promotions for customers based on their proximity to store locations. Customers receive real-time notifications when they're near participating businesses, creating opportunities for increased foot traffic and sales.
 
 ### Key Features
 
