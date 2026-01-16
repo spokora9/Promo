@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loginUser, registerUser } from '@/lib/api';
+import { loginUser, registerUser, logoutUser } from '@/lib/api';
 
 interface User {
   id: string;
@@ -9,20 +9,23 @@ interface User {
   lastName: string;
   email?: string;
   phone?: string;
+  avatarUrl?: string;
 }
 
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (credentials: { email: string; password: string }) => Promise<void>;
+  login: (emailOrPhone: string, password: string) => Promise<void>;
   register: (data: {
     firstName: string;
     lastName: string;
-    email: string;
+    email?: string;
+    phone?: string;
     password: string;
   }) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   setUser: (user: User) => void;
 }
 
@@ -31,14 +34,17 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isAuthenticated: false,
 
-      login: async (credentials) => {
+      login: async (emailOrPhone: string, password: string) => {
         try {
-          const response = await loginUser(credentials);
+          const response = await loginUser(emailOrPhone, password);
+          const { user, accessToken, refreshToken } = response.data;
           set({
-            user: response.user,
-            token: response.token,
+            user,
+            token: accessToken,
+            refreshToken,
             isAuthenticated: true,
           });
         } catch (error) {
@@ -50,9 +56,11 @@ export const useAuthStore = create<AuthState>()(
       register: async (data) => {
         try {
           const response = await registerUser(data);
+          const { user, accessToken, refreshToken } = response.data;
           set({
-            user: response.user,
-            token: response.token,
+            user,
+            token: accessToken,
+            refreshToken,
             isAuthenticated: true,
           });
         } catch (error) {
@@ -61,12 +69,19 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => {
-        set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-        });
+      logout: async () => {
+        try {
+          await logoutUser();
+        } catch (error) {
+          console.error('Logout error:', error);
+        } finally {
+          set({
+            user: null,
+            token: null,
+            refreshToken: null,
+            isAuthenticated: false,
+          });
+        }
       },
 
       setUser: (user) => {

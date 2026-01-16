@@ -60,17 +60,26 @@ class ApiClient {
 const api = new ApiClient();
 
 // Auth APIs
-export const loginUser = async (credentials: { email: string; password: string }) => {
-  return api.post<{ user: any; token: string }>('/auth/login', credentials);
+export const loginUser = async (emailOrPhone: string, password: string) => {
+  return api.post<{ success: boolean; data: { user: any; accessToken: string; refreshToken: string; expiresIn: number } }>('/auth/users/login', { emailOrPhone, password });
 };
 
 export const registerUser = async (data: {
   firstName: string;
   lastName: string;
-  email: string;
+  email?: string;
+  phone?: string;
   password: string;
 }) => {
-  return api.post<{ user: any; token: string }>('/auth/register', data);
+  return api.post<{ success: boolean; data: { user: any; accessToken: string; refreshToken: string; expiresIn: number } }>('/auth/users/register', data);
+};
+
+export const refreshAccessToken = async (refreshToken: string) => {
+  return api.post<{ success: boolean; data: { accessToken: string; refreshToken: string; expiresIn: number } }>('/auth/refresh', { refreshToken });
+};
+
+export const logoutUser = async () => {
+  return api.post('/auth/logout');
 };
 
 // Location APIs
