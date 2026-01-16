@@ -49,15 +49,36 @@ export function DashboardPage() {
           </p>
         </div>
 
-        {/* Quick Stats */}
+        {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+          <button
+            onClick={() => navigate('/locations')}
+            className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition text-left"
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-gray-600">Total Locations</h3>
+              <h3 className="text-sm font-medium text-gray-600">Manage Locations</h3>
               <span className="text-2xl">📍</span>
             </div>
-            <p className="text-3xl font-bold text-gray-900">-</p>
-            <p className="text-sm text-gray-500 mt-1">Coming in Sprint 2</p>
+            <p className="text-sm text-indigo-600 font-medium">View & edit locations →</p>
+          </button>
+
+          <button
+            onClick={() => navigate('/profile')}
+            className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition text-left"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-600">Shop Profile</h3>
+              <span className="text-2xl">⚙️</span>
+            </div>
+            <p className="text-sm text-indigo-600 font-medium">Edit profile →</p>
+          </button>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 opacity-50">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-600">Promotions</h3>
+              <span className="text-2xl">🎯</span>
+            </div>
+            <p className="text-sm text-gray-500">Coming in Sprint 3</p>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">

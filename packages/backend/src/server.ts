@@ -2,6 +2,8 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { ZodError } from 'zod';
 import { authRoutes } from './modules/auth/auth.routes';
+import { locationsRoutes } from './modules/locations/locations.routes';
+import { profileRoutes } from './modules/profile/profile.routes';
 import { prisma } from './shared/config/database';
 import { AppError } from './shared/utils/errors';
 
@@ -48,6 +50,12 @@ export async function buildServer() {
     async (instance) => {
       // Register auth routes
       instance.register(authRoutes, { prefix: '/auth' });
+
+      // Register locations routes
+      instance.register(locationsRoutes);
+
+      // Register profile routes
+      instance.register(profileRoutes);
     },
     { prefix: '/api/v1' }
   );
