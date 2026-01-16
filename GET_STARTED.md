@@ -52,8 +52,8 @@ Welcome to the LoCo (Location Commerce) project! This guide will help you get st
    - ⏳ Prisma schema (next step)
 
 4. **Frontend Packages**
-   - ⏳ Shop dashboard (to be initialized)
-   - ⏳ Customer app (to be initialized)
+   - ✅ Shop dashboard (React + Vite)
+   - ✅ Customer app (React Native + Expo)
 
 ---
 
@@ -157,10 +157,13 @@ loco/
 │   │   └── tsconfig.json
 │   │
 │   ├── shop-dashboard/       # React dashboard for merchants
-│   │   └── (to be initialized)
+│   │   ├── src/
+│   │   └── package.json
 │   │
-│   ├── customer-app/         # React PWA for customers
-│   │   └── (to be initialized)
+│   ├── customer-app/         # React Native (Expo) app for customers
+│   │   ├── app/              # Expo Router screens
+│   │   ├── src/              # Components, stores, services
+│   │   └── package.json
 │   │
 │   └── shared/               # Shared code across packages
 │       └── (to be initialized)
@@ -186,14 +189,17 @@ loco/
 - [x] All planning documents
 - [x] Project structure and monorepo setup
 - [x] Docker Compose configuration
-- [x] Backend package initialized
+- [x] Backend package initialized with Prisma
+- [x] Shop dashboard initialized (React + Vite)
+- [x] Customer app initialized (React Native + Expo)
 - [x] UI/UX designs specified
 - [x] Sprint plan created
+- [x] Database schema and seed data
 
 ### In Progress
-- [ ] Prisma schema creation
-- [ ] Database migrations
-- [ ] Frontend packages initialization
+- [ ] Authentication implementation
+- [ ] API endpoints
+- [ ] Testing setup
 
 ### Next Steps (Sprint 0)
 1. Create Prisma schema
@@ -229,14 +235,22 @@ loco/
   npx tailwindcss init -p
   ```
 
-- [ ] **INFRA-006**: Initialize customer-app package (PWA)
+- [x] **INFRA-006**: Initialize customer-app package (React Native)
   ```bash
   cd packages/customer-app
-  npm create vite@latest . -- --template react-ts
-  npm install react-router-dom axios zustand @tanstack/react-query
-  npm install -D tailwindcss postcss autoprefixer vite-plugin-pwa
-  npx tailwindcss init -p
+  # Copy .env.example to .env and configure API URL
+  cp .env.example .env
+  # Install dependencies
+  npm install
+  # Start Expo development server
+  npm start
   ```
+
+  **Note**: We chose React Native (Expo) over PWA for superior native features:
+  - Background location tracking (geofencing)
+  - Push notifications with better reliability
+  - Native UI components and performance
+  - See [MOBILE_STACK_ANALYSIS.md](./MOBILE_STACK_ANALYSIS.md) for full comparison
 
 - [ ] **INFRA-007**: Set up CI/CD pipeline
   - Create `.github/workflows/ci.yml`
@@ -299,12 +313,10 @@ npm run seed
 npm test
 ```
 
-### Frontend (once initialized)
+### Shop Dashboard (Web)
 
 ```bash
 cd packages/shop-dashboard
-# or
-cd packages/customer-app
 
 # Development server
 npm run dev
@@ -322,6 +334,30 @@ npm test
 npm run lint
 ```
 
+### Customer App (React Native)
+
+```bash
+cd packages/customer-app
+
+# Start Expo development server
+npm start
+
+# Run on iOS simulator
+npm run ios
+
+# Run on Android emulator
+npm run android
+
+# Run on web (for testing)
+npm run web
+
+# Type check
+npm run type-check
+
+# Lint
+npm run lint
+```
+
 ---
 
 ## 🔧 Troubleshooting
@@ -332,12 +368,33 @@ npm run lint
 # Find process using port
 lsof -i :3000  # Backend
 lsof -i :4000  # Shop dashboard
-lsof -i :4001  # Customer app
+lsof -i :19000 # Expo Metro bundler
 lsof -i :5432  # PostgreSQL
 lsof -i :6379  # Redis
 
 # Kill process
 kill -9 <PID>
+```
+
+### Expo/React Native Issues
+
+```bash
+# Clear Expo cache
+cd packages/customer-app
+npx expo start -c
+
+# Reset Metro bundler cache
+npx expo start --clear
+
+# Reinstall node modules
+rm -rf node_modules
+npm install
+
+# iOS simulator issues
+npx expo run:ios --device
+
+# Android emulator issues
+npx expo run:android --device
 ```
 
 ### Docker Issues
@@ -555,6 +612,8 @@ test: add unit tests for promotion validation
 - **React Docs**: https://react.dev/
 - **Vite Docs**: https://vitejs.dev/
 - **Tailwind CSS**: https://tailwindcss.com/docs
+- **Expo Docs**: https://docs.expo.dev/
+- **React Native Docs**: https://reactnative.dev/docs/getting-started
 
 ---
 

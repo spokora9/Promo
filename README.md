@@ -51,12 +51,13 @@ LoCo (Location Commerce) enables shops and businesses to create targeted promoti
 - **Maps**: Mapbox GL JS
 
 ### Frontend - Customer App
-- **Type**: Progressive Web App (PWA)
-- **Framework**: React 18+ with TypeScript
-- **Build Tool**: Vite + PWA Plugin
+- **Type**: Native Mobile App (React Native + Expo)
+- **Framework**: React Native with TypeScript
+- **Navigation**: Expo Router (file-based routing)
 - **State**: React Query + Zustand
-- **Offline**: Service Workers + IndexedDB
-- **Geolocation**: Web Geolocation API
+- **Location**: expo-location with background tracking & geofencing
+- **Notifications**: expo-notifications with FCM
+- **Maps**: react-native-maps
 
 ### DevOps
 - **Containerization**: Docker + Docker Compose
@@ -69,9 +70,9 @@ LoCo (Location Commerce) enables shops and businesses to create targeted promoti
 - **Monorepo structure** with Turborepo for efficient builds
 - **Geospatial queries** using PostGIS for accurate distance calculations
 - **Multi-layer caching** (memory, Redis, database) for optimal performance
-- **Real-time notifications** via WebSockets and push notifications
+- **Real-time notifications** via push notifications with background geofencing
 - **Scalable queue-based** background job processing
-- **Mobile-first PWA** with offline support and native-like experience
+- **Native mobile app** with superior location tracking and notification support
 
 ## Documentation
 
@@ -84,6 +85,7 @@ LoCo (Location Commerce) enables shops and businesses to create targeted promoti
 ### Technical
 - [🏗️ Architecture Plan](./ARCHITECTURE_PLAN.md) - Comprehensive technical architecture
 - [📁 Project Structure](./PROJECT_STRUCTURE.md) - Code organization and conventions
+- [📱 Mobile Stack Analysis](./MOBILE_STACK_ANALYSIS.md) - PWA vs React Native comparison
 - [🚀 Quick Start Guide](./QUICK_START.md) - Original development setup guide
 - [✨ Get Started](./GET_STARTED.md) - Quick start for development (START HERE)
 
