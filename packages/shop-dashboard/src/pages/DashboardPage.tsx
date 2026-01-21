@@ -63,6 +63,17 @@ export function DashboardPage() {
           </button>
 
           <button
+            onClick={() => navigate('/promotions')}
+            className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition text-left"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-600">Manage Promotions</h3>
+              <span className="text-2xl">🎯</span>
+            </div>
+            <p className="text-sm text-indigo-600 font-medium">Create & edit promotions →</p>
+          </button>
+
+          <button
             onClick={() => navigate('/profile')}
             className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition text-left"
           >
@@ -72,14 +83,6 @@ export function DashboardPage() {
             </div>
             <p className="text-sm text-indigo-600 font-medium">Edit profile →</p>
           </button>
-
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 opacity-50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-gray-600">Promotions</h3>
-              <span className="text-2xl">🎯</span>
-            </div>
-            <p className="text-sm text-gray-500">Coming in Sprint 3</p>
-          </div>
 
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex items-center justify-between mb-4">
@@ -102,7 +105,7 @@ export function DashboardPage() {
 
         {/* Sprint Progress */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Sprint 1 Complete! ✅</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Sprint 3 Complete! ✅</h3>
           <div className="space-y-3">
             <div className="flex items-center">
               <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
@@ -116,23 +119,37 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="flex items-center opacity-50">
-              <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-600">2</span>
+            <div className="flex items-center">
+              <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-900">Location Management</p>
-                <p className="text-xs text-gray-500">Coming in Sprint 2</p>
+                <p className="text-sm font-medium text-gray-900">Location & Profile Management</p>
+                <p className="text-xs text-gray-500">Add locations and edit shop profile</p>
+              </div>
+            </div>
+
+            <div className="flex items-center">
+              <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4 a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-900">Promotion Management</p>
+                <p className="text-xs text-gray-500">Create and manage promotions with geofencing</p>
               </div>
             </div>
 
             <div className="flex items-center opacity-50">
               <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-gray-600">3</span>
+                <span className="text-sm font-medium text-gray-600">4</span>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-900">Promotion Management</p>
-                <p className="text-xs text-gray-500">Coming in Sprint 3</p>
+                <p className="text-sm font-medium text-gray-900">Discovery & Geolocation</p>
+                <p className="text-xs text-gray-500">Coming in Sprint 4</p>
               </div>
             </div>
           </div>

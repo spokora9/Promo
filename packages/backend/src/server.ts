@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { authRoutes } from './modules/auth/auth.routes';
 import { locationsRoutes } from './modules/locations/locations.routes';
 import { profileRoutes } from './modules/profile/profile.routes';
+import { promotionsRoutes } from './modules/promotions/promotions.routes';
 import { prisma } from './shared/config/database';
 import { AppError } from './shared/utils/errors';
 
@@ -56,6 +57,9 @@ export async function buildServer() {
 
       // Register profile routes
       instance.register(profileRoutes);
+
+      // Register promotions routes
+      instance.register(promotionsRoutes);
     },
     { prefix: '/api/v1' }
   );

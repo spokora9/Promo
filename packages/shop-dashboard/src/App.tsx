@@ -4,6 +4,8 @@ import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { LocationFormPage } from './pages/LocationFormPage';
+import { PromotionsPage } from './pages/PromotionsPage';
+import { PromotionFormPage } from './pages/PromotionFormPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -43,6 +45,30 @@ function App() {
           element={
             <ProtectedRoute>
               <LocationFormPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/promotions"
+          element={
+            <ProtectedRoute>
+              <PromotionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/promotions/new"
+          element={
+            <ProtectedRoute>
+              <PromotionFormPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/promotions/:id/edit"
+          element={
+            <ProtectedRoute>
+              <PromotionFormPage />
             </ProtectedRoute>
           }
         />
