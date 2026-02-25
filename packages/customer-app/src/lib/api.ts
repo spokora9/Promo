@@ -92,11 +92,11 @@ export const updateUserLocation = async (location: {
 };
 
 // Promotion APIs
-export const getNearbyPromotions = async (location: any) => {
+export const getNearbyPromotions = async (location: any, radiusMeters: number = 5000) => {
   return api.get<any[]>('/promotions/nearby', {
     latitude: location?.latitude,
     longitude: location?.longitude,
-    radius: 5000,
+    radiusMeters,
   });
 };
 

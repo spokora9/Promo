@@ -124,6 +124,28 @@ export class PromotionsController {
     });
   }
 
+  // Get a single promotion publicly (for customers)
+  static async getPublicPromotion(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+    const { latitude, longitude } = request.query as { latitude?: string; longitude?: string };
+
+    const lat = latitude ? parseFloat(latitude) : undefined;
+    const lon = longitude ? parseFloat(longitude) : undefined;
+
+    const promotion = await PromotionsService.getPublicPromotion(id, lat, lon);
+    return reply.send({ success: true, data: promotion });
+  }
+
+  // Track a promotion view
+  static async trackView(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+    const userId = (request as any).user?.id;
+    const { distanceMeters } = request.body as { distanceMeters?: number };
+
+    await PromotionsService.trackView(id, userId, distanceMeters);
+    return reply.send({ success: true });
+  }
+
   // Get promotion statistics
   static async getPromotionStats(request: FastifyRequest, reply: FastifyReply) {
     const shopId = (request as any).user.id;

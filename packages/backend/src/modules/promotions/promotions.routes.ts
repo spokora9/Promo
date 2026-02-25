@@ -46,4 +46,6 @@ export async function promotionsRoutes(fastify: FastifyInstance) {
 
   // Public/customer routes
   fastify.get('/promotions/nearby', PromotionsController.getNearbyPromotions);
+  fastify.get('/promotions/:id', PromotionsController.getPublicPromotion);
+  fastify.post('/promotions/:id/view', PromotionsController.trackView);
 }
