@@ -9,9 +9,7 @@ export class PromotionsService {
       where: { shopId },
       include: {
         _count: {
-          select: {
-            redemptions: true,
-          },
+          select: { redemptions: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -20,15 +18,13 @@ export class PromotionsService {
     return promotions;
   }
 
-  // Get a single promotion by ID
+  // Get a single promotion by ID (shop-owned)
   static async getPromotionById(promotionId: string, shopId: string) {
     const promotion = await prisma.promotion.findUnique({
       where: { id: promotionId },
       include: {
         _count: {
-          select: {
-            redemptions: true,
-          },
+          select: { redemptions: true },
         },
       },
     });
@@ -37,7 +33,6 @@ export class PromotionsService {
       throw new NotFoundError('Promotion not found');
     }
 
-    // Verify ownership
     if (promotion.shopId !== shopId) {
       throw new ForbiddenError('You do not have permission to access this promotion');
     }
@@ -47,16 +42,12 @@ export class PromotionsService {
 
   // Create a new promotion
   static async createPromotion(shopId: string, data: CreatePromotionInput) {
-    // Verify shop exists
-    const shop = await prisma.shop.findUnique({
-      where: { id: shopId },
-    });
+    const shop = await prisma.shop.findUnique({ where: { id: shopId } });
 
     if (!shop) {
       throw new NotFoundError('Shop not found');
     }
 
-    // Validate dates
     const startDate = new Date(data.startDate);
     const endDate = new Date(data.endDate);
 
@@ -64,18 +55,13 @@ export class PromotionsService {
       throw new BadRequestError('End date must be after start date');
     }
 
-    // Validate location targeting
     if (!data.targetAllLocations && (!data.targetLocationIds || data.targetLocationIds.length === 0)) {
       throw new BadRequestError('Must target all locations or specify at least one location');
     }
 
-    // If targeting specific locations, verify they belong to the shop
     if (data.targetLocationIds && data.targetLocationIds.length > 0) {
       const locations = await prisma.shopLocation.findMany({
-        where: {
-          id: { in: data.targetLocationIds },
-          shopId,
-        },
+        where: { id: { in: data.targetLocationIds }, shopId },
       });
 
       if (locations.length !== data.targetLocationIds.length) {
@@ -83,11 +69,9 @@ export class PromotionsService {
       }
     }
 
-    // Determine initial status (active if start date is now or past, draft otherwise)
     const now = new Date();
     const status = startDate <= now ? 'active' : 'draft';
 
-    // Create promotion
     const promotion = await prisma.promotion.create({
       data: {
         shopId,
@@ -112,36 +96,24 @@ export class PromotionsService {
   }
 
   // Update a promotion
-  static async updatePromotion(
-    promotionId: string,
-    shopId: string,
-    data: UpdatePromotionInput
-  ) {
-    // Verify promotion exists and belongs to shop
+  static async updatePromotion(promotionId: string, shopId: string, data: UpdatePromotionInput) {
     await this.getPromotionById(promotionId, shopId);
 
-    // Validate dates if both are provided
     if (data.startDate && data.endDate) {
       const startDate = new Date(data.startDate);
       const endDate = new Date(data.endDate);
-
       if (endDate <= startDate) {
         throw new BadRequestError('End date must be after start date');
       }
     }
 
-    // Validate location targeting
     if (data.targetAllLocations === false && (!data.targetLocationIds || data.targetLocationIds.length === 0)) {
       throw new BadRequestError('Must target all locations or specify at least one location');
     }
 
-    // If targeting specific locations, verify they belong to the shop
     if (data.targetLocationIds && data.targetLocationIds.length > 0) {
       const locations = await prisma.shopLocation.findMany({
-        where: {
-          id: { in: data.targetLocationIds },
-          shopId,
-        },
+        where: { id: { in: data.targetLocationIds }, shopId },
       });
 
       if (locations.length !== data.targetLocationIds.length) {
@@ -149,7 +121,6 @@ export class PromotionsService {
       }
     }
 
-    // Update promotion
     const promotion = await prisma.promotion.update({
       where: { id: promotionId },
       data: {
@@ -175,11 +146,9 @@ export class PromotionsService {
 
   // Delete a promotion
   static async deletePromotion(promotionId: string, shopId: string) {
-    // Verify promotion exists and belongs to shop
     await this.getPromotionById(promotionId, shopId);
 
-    // Check if promotion has redemptions
-    const redemptionCount = await prisma.redemption.count({
+    const redemptionCount = await prisma.promotionRedemption.count({
       where: { promotionId },
     });
 
@@ -189,10 +158,7 @@ export class PromotionsService {
       );
     }
 
-    // Delete promotion
-    await prisma.promotion.delete({
-      where: { id: promotionId },
-    });
+    await prisma.promotion.delete({ where: { id: promotionId } });
 
     return { message: 'Promotion deleted successfully' };
   }
@@ -201,8 +167,7 @@ export class PromotionsService {
   static async activatePromotion(promotionId: string, shopId: string) {
     const promotion = await this.getPromotionById(promotionId, shopId);
 
-    const now = new Date();
-    if (promotion.endDate < now) {
+    if (promotion.endDate < new Date()) {
       throw new BadRequestError('Cannot activate an expired promotion');
     }
 
@@ -226,7 +191,7 @@ export class PromotionsService {
     return { message: 'Promotion paused successfully' };
   }
 
-  // Get nearby promotions (for customers)
+  // Get nearby promotions (for customers) - uses PostGIS
   static async getNearbyPromotions(
     latitude: number,
     longitude: number,
@@ -234,72 +199,164 @@ export class PromotionsService {
   ) {
     const now = new Date();
 
-    // Get promotions using raw SQL with PostGIS
+    // Raw SQL with correct snake_case column/table names matching Prisma @map() values
     const promotions = await prisma.$queryRaw<any[]>`
       SELECT
-        p.*,
-        s.name as "shopName",
-        s."logoUrl" as "shopLogoUrl",
-        sl.name as "locationName",
-        sl.latitude as "locationLatitude",
-        sl.longitude as "locationLongitude",
+        p.id,
+        p.title,
+        p.description,
+        p.terms,
+        p.discount_type AS "discountType",
+        p.discount_value AS "discountValue",
+        p.image_url AS "imageUrl",
+        p.radius_meters AS "radiusMeters",
+        p.start_date AS "startDate",
+        p.end_date AS "endDate",
+        p.status,
+        p.max_redemptions_per_user AS "maxRedemptionsPerUser",
+        p.max_total_redemptions AS "maxTotalRedemptions",
+        p.current_redemptions AS "currentRedemptions",
+        p.is_discovery_offer AS "isDiscoveryOffer",
+        s.id AS "shopId",
+        s.name AS "shopName",
+        s.logo_url AS "shopLogoUrl",
+        s.category AS "shopCategory",
+        sl.id AS "locationId",
+        sl.name AS "locationName",
+        sl.address AS "locationAddress",
+        sl.city AS "locationCity",
+        sl.latitude AS "locationLatitude",
+        sl.longitude AS "locationLongitude",
         ST_Distance(
           ST_MakePoint(${longitude}, ${latitude})::geography,
           ST_MakePoint(sl.longitude, sl.latitude)::geography
-        ) as distance
-      FROM "Promotion" p
-      JOIN "Shop" s ON s.id = p."shopId"
-      JOIN "ShopLocation" sl ON sl."shopId" = s.id
+        )::int AS "distanceMeters"
+      FROM promotions p
+      JOIN shops s ON s.id = p.shop_id
+      JOIN shop_locations sl ON sl.shop_id = s.id
       WHERE
         p.status = 'active'
-        AND p."startDate" <= ${now}
-        AND p."endDate" >= ${now}
-        AND s.status = 'active'
-        AND sl."isActive" = true
+        AND p.start_date <= ${now}
+        AND p.end_date >= ${now}
+        AND s.is_active = true
+        AND sl.is_active = true
         AND (
-          p."targetAllLocations" = true
-          OR sl.id = ANY(p."targetLocationIds")
+          p.target_all_locations = true
+          OR sl.id = ANY(p.target_location_ids)
         )
         AND ST_DWithin(
           ST_MakePoint(${longitude}, ${latitude})::geography,
           ST_MakePoint(sl.longitude, sl.latitude)::geography,
-          LEAST(p."radiusMeters", ${radiusMeters})
+          LEAST(p.radius_meters, ${radiusMeters})
         )
-      ORDER BY distance ASC
+      ORDER BY "distanceMeters" ASC
       LIMIT 50
     `;
 
     return promotions;
   }
 
-  // Get promotion statistics
-  static async getPromotionStats(promotionId: string, shopId: string) {
-    await this.getPromotionById(promotionId, shopId);
-
-    const stats = await prisma.redemption.groupBy({
-      by: ['status'],
-      where: { promotionId },
-      _count: {
-        id: true,
+  // Get a single promotion publicly (for customers, with distance)
+  static async getPublicPromotion(
+    promotionId: string,
+    latitude?: number,
+    longitude?: number
+  ) {
+    const promotion = await prisma.promotion.findUnique({
+      where: { id: promotionId },
+      include: {
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            logoUrl: true,
+            description: true,
+            category: true,
+            locations: {
+              where: { isActive: true },
+              select: {
+                id: true,
+                name: true,
+                address: true,
+                city: true,
+                state: true,
+                latitude: true,
+                longitude: true,
+                phone: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: { redemptions: true },
+        },
       },
     });
 
-    const totalRedemptions = await prisma.redemption.count({
+    if (!promotion) {
+      throw new NotFoundError('Promotion not found');
+    }
+
+    // Calculate distance if coordinates provided
+    let distanceMeters: number | null = null;
+    if (latitude !== undefined && longitude !== undefined && promotion.shop.locations.length > 0) {
+      const loc = promotion.shop.locations[0];
+      const R = 6371000;
+      const φ1 = (latitude * Math.PI) / 180;
+      const φ2 = (loc.latitude * Math.PI) / 180;
+      const Δφ = ((loc.latitude - latitude) * Math.PI) / 180;
+      const Δλ = ((loc.longitude - longitude) * Math.PI) / 180;
+      const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+      distanceMeters = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    }
+
+    return { ...promotion, distanceMeters };
+  }
+
+  // Track a promotion view
+  static async trackView(
+    promotionId: string,
+    userId?: string,
+    distanceMeters?: number
+  ) {
+    const promotion = await prisma.promotion.findUnique({ where: { id: promotionId } });
+    if (!promotion) {
+      throw new NotFoundError('Promotion not found');
+    }
+
+    await prisma.promotionView.create({
+      data: {
+        promotionId,
+        userId: userId || null,
+        userDistanceMeters: distanceMeters || null,
+      },
+    });
+
+    return { message: 'View tracked' };
+  }
+
+  // Get promotion statistics (for shop owners)
+  static async getPromotionStats(promotionId: string, shopId: string) {
+    await this.getPromotionById(promotionId, shopId);
+
+    const totalRedemptions = await prisma.promotionRedemption.count({
       where: { promotionId },
     });
 
-    const uniqueUsers = await prisma.redemption.groupBy({
+    const uniqueUsers = await prisma.promotionRedemption.groupBy({
       by: ['userId'],
       where: { promotionId },
     });
 
+    const totalViews = await prisma.promotionView.count({
+      where: { promotionId },
+    });
+
     return {
+      totalViews,
       totalRedemptions,
       uniqueUsers: uniqueUsers.length,
-      byStatus: stats.reduce((acc, stat) => {
-        acc[stat.status] = stat._count.id;
-        return acc;
-      }, {} as Record<string, number>),
+      conversionRate: totalViews > 0 ? ((totalRedemptions / totalViews) * 100).toFixed(1) : '0',
     };
   }
 }

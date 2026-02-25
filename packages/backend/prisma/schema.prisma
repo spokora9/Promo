@@ -24,12 +24,14 @@ model Shop {
   logoUrl      String?  @map("logo_url")
   description  String?
   category     String?
+  phone        String?
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  locations   ShopLocation[]
-  promotions  Promotion[]
+  locations        ShopLocation[]
+  promotions       Promotion[]
+  userPreferences  UserShopPreference[]
 
   @@map("shops")
 }
@@ -50,8 +52,7 @@ model ShopLocation {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  shop       Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  promotions PromotionLocation[]
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([shopId])
   @@index([latitude, longitude])
@@ -67,49 +68,36 @@ model Promotion {
   shopId                String   @map("shop_id")
   title                 String
   description           String
-  termsConditions       String?  @map("terms_conditions")
+  terms                 String?
   discountType          String?  @map("discount_type")
   discountValue         Decimal? @map("discount_value") @db.Decimal(10, 2)
   imageUrl              String?  @map("image_url")
-  targetType            String   @map("target_type")
+  targetAllLocations    Boolean  @default(true) @map("target_all_locations")
+  targetLocationIds     String[] @default([]) @map("target_location_ids")
   radiusMeters          Int      @map("radius_meters")
   startDate             DateTime @map("start_date")
   endDate               DateTime @map("end_date")
-  isActive              Boolean  @default(true) @map("is_active")
+  status                String   @default("draft")
   maxRedemptionsPerUser Int?     @default(1) @map("max_redemptions_per_user")
   maxTotalRedemptions   Int?     @map("max_total_redemptions")
   currentRedemptions    Int      @default(0) @map("current_redemptions")
 
   // Discovery Mode fields
-  isDiscoveryOffer          Boolean  @default(false) @map("is_discovery_offer")
-  discoveryBoost            Int?     @map("discovery_boost")
-  maxDiscoveryExposures     Int?     @default(5) @map("max_discovery_exposures")
-  autoConvertAfterExposures Boolean  @default(false) @map("auto_convert_after_exposures")
+  isDiscoveryOffer      Boolean  @default(false) @map("is_discovery_offer")
 
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 
-  shop          Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  locations     PromotionLocation[]
-  views         PromotionView[]
-  redemptions   PromotionRedemption[]
-  notifications Notification[]
+  shop               Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  views              PromotionView[]
+  redemptions        PromotionRedemption[]
+  notifications      Notification[]
+  discoveryExposures DiscoveryExposure[]
 
   @@index([shopId])
   @@index([startDate, endDate])
-  @@index([isActive])
+  @@index([status])
   @@map("promotions")
-}
-
-model PromotionLocation {
-  promotionId String @map("promotion_id")
-  locationId  String @map("location_id")
-
-  promotion Promotion    @relation(fields: [promotionId], references: [id], onDelete: Cascade)
-  location  ShopLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-
-  @@id([promotionId, locationId])
-  @@map("promotion_locations")
 }
 
 // ============================================================================
@@ -125,24 +113,24 @@ model User {
   passwordHash              String?  @map("password_hash")
   avatarUrl                 String?  @map("avatar_url")
   pushNotificationsEnabled  Boolean  @default(true) @map("push_notifications_enabled")
-  emailNotificationsEnabled Boolean  @default(true) @map("email_notifications_enabled")
   notificationRadiusMeters  Int      @default(5000) @map("notification_radius_meters")
   locationSharingEnabled    Boolean  @default(true) @map("location_sharing_enabled")
 
   // Discovery Mode settings
   discoveryModeEnabled      Boolean  @default(false) @map("discovery_mode_enabled")
-  discoveryModeType         String   @default("off") @map("discovery_mode_type") // 'off', 'active', 'silent', 'smart'
+  discoveryModeType         String   @default("off") @map("discovery_mode_type")
 
   createdAt                 DateTime @default(now()) @map("created_at")
   updatedAt                 DateTime @updatedAt @map("updated_at")
   lastLogin                 DateTime? @map("last_login")
 
-  location          UserLocation?
-  shopPreferences   UserShopPreference[]
-  promotionViews    PromotionView[]
-  redemptions       PromotionRedemption[]
-  notifications     Notification[]
+  location           UserLocation?
+  shopPreferences    UserShopPreference[]
+  promotionViews     PromotionView[]
+  redemptions        PromotionRedemption[]
+  notifications      Notification[]
   discoveryExposures DiscoveryExposure[]
+  pushSubscriptions  PushSubscription[]
 
   @@map("users")
 }
@@ -152,7 +140,7 @@ model UserLocation {
   userId         String   @unique @map("user_id")
   latitude       Float
   longitude      Float
-  accuracyMeters Decimal? @map("accuracy_meters") @db.Decimal(10, 2)
+  accuracyMeters Float?   @map("accuracy_meters")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -165,10 +153,11 @@ model UserShopPreference {
   userId               String   @map("user_id")
   shopId               String   @map("shop_id")
   notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
-  addedVia             String?  @map("added_via") // 'discovery_mode', 'discovery_redemption', 'manual'
+  addedVia             String?  @map("added_via")
   createdAt            DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@id([userId, shopId])
   @@map("user_shop_preferences")
@@ -246,31 +235,27 @@ model DiscoveryExposure {
   shopId                  String    @map("shop_id")
   promotionId             String?   @map("promotion_id")
 
-  // Exposure tracking
   exposureCount           Int       @default(1) @map("exposure_count")
   firstExposureAt         DateTime  @default(now()) @map("first_exposure_at")
   lastExposureAt          DateTime  @default(now()) @map("last_exposure_at")
 
-  // Engagement tracking
   totalViews              Int       @default(0) @map("total_views")
   totalDismissals         Int       @default(0) @map("total_dismissals")
   totalNotInterested      Int       @default(0) @map("total_not_interested")
 
-  // Status
-  status                  String    @default("active") @map("status") // 'active', 'grace_period', 'exhausted', 'converted'
+  status                  String    @default("active") @map("status")
   gracePeriodStartedAt    DateTime? @map("grace_period_started_at")
   exhaustedAt             DateTime? @map("exhausted_at")
   convertedAt             DateTime? @map("converted_at")
 
-  // Redemption
   redeemedDuringDiscovery Boolean   @default(false) @map("redeemed_during_discovery")
   redemptionAt            DateTime? @map("redemption_at")
 
-  // Metadata
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
 
   @@unique([userId, shopId])
   @@index([userId])
@@ -280,16 +265,18 @@ model DiscoveryExposure {
 }
 
 // ============================================================================
-// WEB PUSH SUBSCRIPTIONS
+// PUSH SUBSCRIPTIONS
 // ============================================================================
 
 model PushSubscription {
-  id         String   @id @default(uuid())
-  userId     String   @map("user_id")
-  endpoint   String   @unique
-  p256dh     String
-  auth       String
-  createdAt  DateTime @default(now()) @map("created_at")
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("push_subscriptions")
