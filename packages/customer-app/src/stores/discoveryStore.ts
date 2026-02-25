@@ -12,7 +12,7 @@ interface DiscoveryState {
   hasBeenExposed: (shopId: string) => boolean;
 }
 
-export const useDiscoveryStore = create<DiscoveryState>()(
+export const useDiscoveryStore = create<DiscoveryState>(
   persist(
     (set, get) => ({
       mode: 'off',

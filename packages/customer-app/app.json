@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -44,9 +45,7 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "CAMERA"
       ],
       "config": {
         "googleMaps": {
@@ -60,13 +59,28 @@
     "plugins": [
       "expo-router",
       "expo-location",
-      "expo-notifications",
-      "expo-camera",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#6366F1",
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "LoCo needs camera access to scan QR codes for redeeming promotions."
+        }
+      ],
       [
         "expo-build-properties",
         {
           "ios": {
             "useFrameworks": "static"
+          },
+          "android": {
+            "enableProguardInReleaseBuilds": true
           }
         }
       ]

@@ -29,7 +29,7 @@ interface AuthState {
   setUser: (user: User) => void;
 }
 
-export const useAuthStore = create<AuthState>()(
+export const useAuthStore = create<AuthState>(
   persist(
     (set) => ({
       user: null,

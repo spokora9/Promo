@@ -1,12 +1,40 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  /* Primary - Indigo */
+  --color-primary-50: #EEF2FF;
+  --color-primary-100: #E0E7FF;
+  --color-primary-200: #C7D2FE;
+  --color-primary-300: #A5B4FC;
+  --color-primary-400: #818CF8;
+  --color-primary-500: #6366F1;
+  --color-primary-600: #4F46E5;
+  --color-primary-700: #4338CA;
+  --color-primary-800: #3730A3;
+  --color-primary-900: #312E81;
+
+  /* Success */
+  --color-success-50: #F0FDF4;
+  --color-success-500: #22C55E;
+  --color-success-600: #16A34A;
+  --color-success-700: #15803D;
+
+  /* Warning */
+  --color-warning-50: #FFFBEB;
+  --color-warning-500: #F59E0B;
+  --color-warning-600: #D97706;
+
+  /* Error */
+  --color-error-50: #FEF2F2;
+  --color-error-500: #EF4444;
+  --color-error-600: #DC2626;
+
+  /* Fonts */
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+  --font-family-mono: 'Fira Code', 'Courier New', monospace;
+}
 
 @layer base {
-  * {
-    @apply border-gray-200;
-  }
-
   body {
     @apply bg-gray-50 text-gray-900;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
