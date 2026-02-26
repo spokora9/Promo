@@ -161,7 +161,7 @@ export class UsersService {
             discountValue: true,
             endDate: true,
             status: true,
-            shop: { select: { id: true, name: true, logoUrl: true } },
+            shop: { select: { id: true, name: true, logoUrl: true, category: true } },
           },
         },
       },
