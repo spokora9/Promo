@@ -1,1571 +1,1659 @@
-# Location-Based Promotions Platform - Architecture Plan
+# LoCo — Complete Production Architecture Plan
 
-## Executive Summary
-
-A mobile-first platform connecting shops with nearby customers through location-based promotions and real-time notifications.
-
-## Core Use Cases
-
-### Shop Dashboard
-- McDonald's: "Free coffee with small fries" for users within 300m
-- Shoe Store: "30% off all shoes for 24h" for users within 15km
-
-### Customer App
-- Receive location-based promotions
-- Manage notification preferences
-- Browse nearby offers
+**Version**: 2.0
+**Date**: February 2026
+**Status**: Authoritative reference — supersedes all previous architecture docs
+**Scope**: App Store (iOS), Google Play (Android), Web (shop dashboard)
 
 ---
 
-## 1. SYSTEM ARCHITECTURE
+## Table of Contents
 
-### High-Level Architecture
+1. [System Overview](#1-system-overview)
+2. [Current State vs Target State](#2-current-state-vs-target-state)
+3. [Backend Architecture](#3-backend-architecture)
+4. [Database Architecture](#4-database-architecture)
+5. [Customer App Architecture](#5-customer-app-architecture)
+6. [Shop Dashboard Architecture](#6-shop-dashboard-architecture)
+7. [Notification System Architecture](#7-notification-system-architecture)
+8. [Redemption System Architecture](#8-redemption-system-architecture)
+9. [Analytics Architecture](#9-analytics-architecture)
+10. [File Storage Architecture](#10-file-storage-architecture)
+11. [Caching Architecture](#11-caching-architecture)
+12. [Security Architecture](#12-security-architecture)
+13. [Infrastructure & Deployment](#13-infrastructure--deployment)
+14. [CI/CD Pipeline](#14-cicd-pipeline)
+15. [Testing Architecture](#15-testing-architecture)
+16. [Environment Configuration](#16-environment-configuration)
+17. [Implementation Roadmap](#17-implementation-roadmap)
+18. [API Contract Reference](#18-api-contract-reference)
+
+---
+
+## 1. System Overview
+
+### 1.1 Platform Components
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Client Layer                             │
-├──────────────────────────┬──────────────────────────────────┤
-│   Shop Dashboard (Web)   │   Customer App (Mobile Web/PWA)  │
-│   - React + TypeScript   │   - React Native / PWA           │
-│   - Vite                 │   - Native Location APIs         │
-└──────────────┬───────────┴────────────────┬─────────────────┘
-               │                            │
-               └────────────┬───────────────┘
-                            │
-                    ┌───────▼──────┐
-                    │   API Gateway │
-                    │   (Express)   │
-                    └───────┬──────┘
-                            │
-         ┌──────────────────┼──────────────────┐
-         │                  │                  │
-    ┌────▼────┐      ┌─────▼─────┐     ┌─────▼─────┐
-    │ Business│      │  Location │     │Notification│
-    │ Logic   │      │  Service  │     │  Service  │
-    │ Service │      │           │     │           │
-    └────┬────┘      └─────┬─────┘     └─────┬─────┘
-         │                 │                  │
-         └─────────────┬───┴──────────────────┘
-                       │
-              ┌────────▼────────┐
-              │   PostgreSQL    │
-              │   + PostGIS     │
-              └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              CLIENT LAYER                                    │
+├──────────────────────────────────┬──────────────────────────────────────────┤
+│     Shop Dashboard (Web)         │      Customer App (iOS + Android)        │
+│  React 19 + Vite + Tailwind      │      Expo SDK 52 + React Native          │
+│  Deployed: Vercel / Netlify      │      Distributed: App Store + Play Store  │
+│  URL: dashboard.loco.app         │      Bundle ID: com.loco.customerapp     │
+└──────────────┬───────────────────┴──────────────────┬───────────────────────┘
+               │                                       │
+               │  HTTPS REST + Bearer JWT              │  HTTPS REST + Bearer JWT
+               │                                       │
+┌──────────────▼───────────────────────────────────────▼───────────────────────┐
+│                         API GATEWAY / REVERSE PROXY                           │
+│                     Nginx (or Caddy) — TLS termination                        │
+│                         api.loco.app → port 3000                              │
+└──────────────────────────────────┬───────────────────────────────────────────┘
+                                   │
+┌──────────────────────────────────▼───────────────────────────────────────────┐
+│                         FASTIFY 5 API SERVER                                  │
+│                    packages/backend/src/server.ts                             │
+│                                                                               │
+│  ┌─────────────┐  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐ │
+│  │    Auth     │  │  Promotions   │  │   Locations  │  │     Users        │ │
+│  │  Module     │  │   Module      │  │   Module     │  │     Module       │ │
+│  └─────────────┘  └───────────────┘  └──────────────┘  └──────────────────┘ │
+│  ┌─────────────┐  ┌───────────────┐  ┌──────────────┐  ┌──────────────────┐ │
+│  │   Shops     │  │ Redemptions   │  │  Analytics   │  │  Notifications   │ │
+│  │  Module     │  │   Module ❌   │  │  Module ❌   │  │   Module ❌      │ │
+│  └─────────────┘  └───────────────┘  └──────────────┘  └──────────────────┘ │
+│  ┌─────────────┐  ┌───────────────┐                                          │
+│  │  Discovery  │  │    Files      │                                           │
+│  │  Module ❌  │  │  Module ❌    │                                           │
+│  └─────────────┘  └───────────────┘                                          │
+└────────────────────────┬───────────────────────────────────────────────────┘
+                         │
+         ┌───────────────┼────────────────────────┐
+         │               │                         │
+┌────────▼──────┐ ┌──────▼────────┐      ┌────────▼──────────┐
+│  PostgreSQL   │ │    Redis 7    │      │  File Storage     │
+│  + PostGIS    │ │               │      │  (S3 / R2)        │
+│  Primary DB   │ │  Cache +      │      │  Images, logos    │
+│               │ │  BullMQ ❌    │      │                   │
+└───────────────┘ └───────────────┘      └───────────────────┘
+                         │
+                ┌────────▼────────┐
+                │  BullMQ Workers  │
+                │  (separate proc) │
+                │  ❌ Not built    │
+                │  - Geofence Job  │
+                │  - Notif Worker  │
+                │  - Promo Cron    │
+                └─────────────────┘
 
-         ┌────────────────────┐
-         │   Redis Cache      │
-         │   + Geo-indexing   │
-         └────────────────────┘
-
-         ┌────────────────────┐
-         │   Message Queue    │
-         │   (BullMQ/Redis)   │
-         └────────────────────┘
+❌ = Not yet built
 ```
 
----
+### 1.2 Technology Stack (Locked Versions)
 
-## 2. RECOMMENDED TECH STACK
-
-### Frontend - Shop Dashboard
-
-**Framework**: React 18+ with TypeScript
-- Modern, widely adopted
-- Excellent ecosystem
-- Strong typing for maintainability
-
-**Build Tool**: Vite
-- Fast development experience
-- Optimized production builds
-- Native ES modules
-
-**UI Framework**:
-- **Option A**: Tailwind CSS + shadcn/ui (Recommended)
-  - Highly customizable
-  - Modern design system
-  - Excellent developer experience
-- **Option B**: Material-UI (MUI)
-  - Enterprise-ready components
-  - Comprehensive out-of-the-box
-
-**State Management**:
-- React Query (TanStack Query) for server state
-- Zustand for client state
-- Context API for simple global state
-
-**Form Handling**: React Hook Form + Zod
-- Type-safe validation
-- Performance optimized
-- Excellent DX
-
-**Maps**: Mapbox GL JS or Leaflet
-- Interactive location selection
-- Geofencing visualization
-- Store location management
-
-### Frontend - Customer App
-
-**Framework**: Progressive Web App (PWA) with React
-- Cross-platform (iOS, Android, Web)
-- Single codebase
-- Native-like experience
-- Easy deployment
-
-**Alternative**: React Native (if native features required)
-- Better native integration
-- Superior performance
-- Access to native APIs
-- Requires more setup
-
-**Geolocation**:
-- Web Geolocation API (for PWA)
-- react-native-geolocation-service (for React Native)
-- Background location tracking
-
-**Notifications**:
-- Web Push API + Service Workers (PWA)
-- Firebase Cloud Messaging (FCM)
-- OneSignal or Expo Notifications
-
-### Backend
-
-**Runtime**: Node.js 20+ LTS
-- JavaScript/TypeScript consistency
-- Excellent async performance
-- Rich ecosystem
-
-**Framework**: Express.js or Fastify
-- **Express**: Mature, widely used, extensive middleware
-- **Fastify**: Faster, modern, better TypeScript support (Recommended)
-
-**Language**: TypeScript
-- Type safety
-- Better maintainability
-- Improved developer experience
-
-**Database**: PostgreSQL 15+ with PostGIS extension
-- ACID compliance
-- Powerful geospatial queries
-- JSON support
-- Proven scalability
-- PostGIS for geo-indexing
-
-**Caching**: Redis 7+
-- Fast in-memory operations
-- Geo-radius queries (GEORADIUS)
-- Session management
-- Rate limiting
-
-**ORM**: Prisma or Drizzle
-- **Prisma**: Excellent DX, migrations, type generation (Recommended)
-- **Drizzle**: More SQL-like, better performance
-
-**Authentication**:
-- JWT tokens (access + refresh)
-- OAuth 2.0 for social login
-- Passport.js or better: jose library
-
-**Notification System**:
-- Firebase Cloud Messaging (FCM)
-- Web Push Protocol
-- BullMQ for job queuing
-
-**File Storage**:
-- AWS S3 or Cloudflare R2
-- For shop logos, promotion images
-
-### DevOps & Infrastructure
-
-**Containerization**: Docker + Docker Compose
-- Consistent environments
-- Easy deployment
-- Service isolation
-
-**Hosting Options**:
-- **Backend**: Railway, Render, or DigitalOcean App Platform
-- **Frontend**: Vercel, Netlify, or Cloudflare Pages
-- **Database**: Managed PostgreSQL (Supabase, Railway, or Neon)
-- **Redis**: Upstash or Redis Cloud
-
-**CI/CD**: GitHub Actions
-- Automated testing
-- Automated deployment
-- Version control integration
-
-**Monitoring**:
-- Sentry for error tracking
-- LogTail or Better Stack for logging
-- Uptime monitoring
+| Layer | Technology | Version | Notes |
+|---|---|---|---|
+| Mobile app | Expo / React Native | SDK 52 | New Architecture enabled |
+| Web dashboard | React | 19 | Vite 6 |
+| API server | Fastify | 5.x | TypeScript |
+| ORM | Prisma | 6.x | |
+| Database | PostgreSQL + PostGIS | 15 + 3.3 | |
+| Cache / Queue | Redis + BullMQ | 7 / 5.x | BullMQ not yet integrated |
+| Auth | JWT (jsonwebtoken) | — | 15m access / 7d refresh |
+| Mobile state | Zustand | 5.x | persisted via AsyncStorage |
+| Mobile data fetching | TanStack Query | 5.x | |
+| Monorepo | Turborepo | latest | |
 
 ---
 
-## 3. DATABASE SCHEMA
+## 2. Current State vs Target State
 
-### Core Tables
+### 2.1 Backend Modules
+
+| Module | File | Status | Notes |
+|---|---|---|---|
+| Auth (shop + user) | `src/modules/auth/` | ✅ Complete | register, login, refresh, logout |
+| Locations CRUD | `src/modules/locations/` | ✅ Complete | geocoding via Google Maps |
+| Profile (shop) | `src/modules/profile/` | ✅ Complete | |
+| Promotions CRUD | `src/modules/promotions/` | ✅ Complete | create, read, update, delete, activate, pause, stats, nearby, view track |
+| Users | `src/modules/users/` | ✅ Complete | location update, profile, follow/unfollow |
+| Shops (public) | `src/modules/shops/` | ✅ Complete | public profile, discovery endpoint stub |
+| **Redemptions** | `src/modules/redemptions/` | ❌ Missing | generate code, verify code, history |
+| **Notifications** | `src/modules/notifications/` | ❌ Missing | push token store, send push, VAPID |
+| **Discovery** | `src/modules/discovery/` | ❌ Missing | exposure tracking, discovery feed API |
+| **Analytics** | `src/modules/analytics/` | ❌ Missing | overview, per-promotion stats |
+| **Files** | `src/modules/files/` | ❌ Missing | logo/image upload to S3 |
+| **BullMQ Workers** | `src/workers/` | ❌ Missing | geofence job, notification worker, promo cron |
+
+### 2.2 Customer App Screens
+
+| Screen | File | Status | Notes |
+|---|---|---|---|
+| Onboarding | `app/onboarding.tsx` | ✅ Complete | |
+| Login | `app/auth/login.tsx` | ✅ Complete | |
+| Register | `app/auth/register.tsx` | ✅ Complete | |
+| Home (nearby promos) | `app/(tabs)/index.tsx` | ✅ Complete | search, filter, radius picker |
+| Discovery | `app/(tabs)/discovery.tsx` | ✅ Complete | mode selector, shop list |
+| Favorites | `app/(tabs)/favorites.tsx` | ⚠️ Needs review | |
+| Profile/Settings | `app/(tabs)/profile.tsx` | ⚠️ Needs review | |
+| Promotion Detail | `app/promotion/[id].tsx` | ✅ Complete | "Redeem" button shows "Coming Soon" |
+| Shop Detail | `app/shop/[id].tsx` | ✅ Complete | |
+| **Redemption Screen** | `app/redemption/[id].tsx` | ❌ Missing | QR code + text code + countdown |
+| **Redemption History** | `app/(tabs)/redeemed.tsx` | ❌ Missing | list of past redemptions |
+| **Notification Inbox** | `app/notifications.tsx` | ❌ Missing | |
+
+### 2.3 Shop Dashboard Pages
+
+| Page | File | Status | Notes |
+|---|---|---|---|
+| Login | `src/pages/LoginPage.tsx` | ✅ Complete | |
+| Register | `src/pages/RegisterPage.tsx` | ✅ Complete | |
+| Dashboard Home | `src/pages/DashboardPage.tsx` | ⚠️ Placeholder | Stats show "-" / "Coming Soon" |
+| Locations List | `src/pages/LocationsPage.tsx` | ✅ Complete | |
+| Location Form | `src/pages/LocationFormPage.tsx` | ✅ Complete | |
+| Promotions List | `src/pages/PromotionsPage.tsx` | ✅ Complete | |
+| Promotion Form | `src/pages/PromotionFormPage.tsx` | ✅ Complete | |
+| Profile | `src/pages/ProfilePage.tsx` | ✅ Complete | |
+| **Dashboard w/ Real Metrics** | `src/pages/DashboardPage.tsx` | ❌ Missing | replace placeholders with live data |
+| **Redemption Verify** | `src/pages/RedemptionVerifyPage.tsx` | ❌ Missing | QR scanner + manual code entry |
+| **Redemptions List** | `src/pages/RedemptionsPage.tsx` | ❌ Missing | history with filters |
+| **Analytics Page** | `src/pages/AnalyticsPage.tsx` | ❌ Missing | charts, per-promo breakdown |
+
+---
+
+## 3. Backend Architecture
+
+### 3.1 Project Structure (Complete Target)
+
+```
+packages/backend/src/
+├── index.ts                          # Entry point — starts Fastify + workers
+├── server.ts                         # Fastify instance builder
+│
+├── modules/
+│   ├── auth/
+│   │   ├── auth.controller.ts        ✅
+│   │   ├── auth.routes.ts            ✅
+│   │   ├── auth.schema.ts            ✅
+│   │   └── auth.service.ts           ✅
+│   │
+│   ├── locations/
+│   │   ├── locations.controller.ts   ✅
+│   │   ├── locations.routes.ts       ✅
+│   │   ├── locations.schema.ts       ✅
+│   │   └── locations.service.ts      ✅
+│   │
+│   ├── profile/
+│   │   ├── profile.controller.ts     ✅
+│   │   ├── profile.routes.ts         ✅
+│   │   ├── profile.schema.ts         ✅
+│   │   └── profile.service.ts        ✅
+│   │
+│   ├── promotions/
+│   │   ├── promotions.controller.ts  ✅
+│   │   ├── promotions.routes.ts      ✅  — missing: /redeem, /verify routes
+│   │   ├── promotions.schema.ts      ✅
+│   │   └── promotions.service.ts     ✅  — missing: redeemPromotion(), verifyCode()
+│   │
+│   ├── shops/
+│   │   ├── shops.routes.ts           ✅
+│   │   └── shops.service.ts          ✅  — missing: discovery feed
+│   │
+│   ├── users/
+│   │   ├── users.controller.ts       ✅
+│   │   ├── users.routes.ts           ✅  — missing: push-token, favorites, redemptions
+│   │   └── users.service.ts          ✅
+│   │
+│   ├── redemptions/                  ❌ CREATE THIS MODULE
+│   │   ├── redemptions.controller.ts
+│   │   ├── redemptions.routes.ts
+│   │   ├── redemptions.schema.ts
+│   │   └── redemptions.service.ts
+│   │
+│   ├── notifications/                ❌ CREATE THIS MODULE
+│   │   ├── notifications.controller.ts
+│   │   ├── notifications.routes.ts
+│   │   ├── notifications.schema.ts
+│   │   └── notifications.service.ts
+│   │
+│   ├── discovery/                    ❌ CREATE THIS MODULE
+│   │   ├── discovery.controller.ts
+│   │   ├── discovery.routes.ts
+│   │   └── discovery.service.ts
+│   │
+│   ├── analytics/                    ❌ CREATE THIS MODULE
+│   │   ├── analytics.controller.ts
+│   │   ├── analytics.routes.ts
+│   │   └── analytics.service.ts
+│   │
+│   └── files/                        ❌ CREATE THIS MODULE
+│       ├── files.controller.ts
+│       ├── files.routes.ts
+│       └── files.service.ts
+│
+├── workers/                          ❌ CREATE THIS DIRECTORY
+│   ├── index.ts                      # Starts all workers
+│   ├── geofence.worker.ts            # Polls user locations vs promotions
+│   ├── notification.worker.ts        # Processes notification queue
+│   └── promotion-lifecycle.worker.ts # Auto-activates/deactivates promotions
+│
+└── shared/
+    ├── config/
+    │   ├── database.ts               ✅
+    │   └── redis.ts                  ✅  — connected but unused
+    ├── middleware/
+    │   └── auth.middleware.ts        ✅
+    ├── services/
+    │   ├── geocoding.service.ts      ✅
+    │   ├── expo-push.service.ts      ❌ CREATE — wraps Expo Push API
+    │   └── qrcode.service.ts         ❌ CREATE — generates QR codes as base64
+    └── utils/
+        └── errors.ts                 ✅
+```
+
+### 3.2 All API Routes — Complete Target
+
+All routes are prefixed with `/api/v1`.
+
+#### Auth Routes (`/auth`)
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| POST | `/auth/shops/register` | None | ✅ |
+| POST | `/auth/shops/login` | None | ✅ |
+| GET | `/auth/shops/me` | Shop JWT | ✅ |
+| POST | `/auth/users/register` | None | ✅ |
+| POST | `/auth/users/login` | None | ✅ |
+| GET | `/auth/users/me` | User JWT | ✅ |
+| POST | `/auth/refresh` | None | ✅ |
+| POST | `/auth/logout` | Any JWT | ✅ |
+
+#### Shop Management Routes (`/shops`)
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| GET | `/shops/:id` | None | ✅ |
+| GET | `/shops/discovery` | None | ✅ (stub exists) |
+| GET | `/shops/promotions` | Shop | ✅ |
+| POST | `/shops/promotions` | Shop | ✅ |
+| GET | `/shops/promotions/:id` | Shop | ✅ |
+| PUT | `/shops/promotions/:id` | Shop | ✅ |
+| DELETE | `/shops/promotions/:id` | Shop | ✅ |
+| POST | `/shops/promotions/:id/activate` | Shop | ✅ |
+| POST | `/shops/promotions/:id/pause` | Shop | ✅ |
+| GET | `/shops/promotions/:id/stats` | Shop | ✅ |
+| POST | `/shops/promotions/:id/image` | Shop | ❌ file upload |
+| POST | `/shops/logo` | Shop | ❌ file upload |
+| GET | `/shops/redemptions` | Shop | ❌ list redemptions |
+| POST | `/shops/redemptions/verify` | Shop | ❌ verify a code |
+| GET | `/shops/analytics/overview` | Shop | ❌ dashboard stats |
+| GET | `/shops/analytics/promotions/:id` | Shop | ❌ per-promo analytics |
+
+#### Location Routes (`/shops/locations`)
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| GET | `/shops/locations` | Shop | ✅ |
+| POST | `/shops/locations` | Shop | ✅ |
+| PUT | `/shops/locations/:id` | Shop | ✅ |
+| DELETE | `/shops/locations/:id` | Shop | ✅ |
+
+#### Promotions (Public/Customer) Routes
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| GET | `/promotions/nearby` | None | ✅ |
+| GET | `/promotions/:id` | None | ✅ |
+| POST | `/promotions/:id/view` | None | ✅ |
+| POST | `/promotions/:id/redeem` | User | ❌ generate redemption code |
+
+#### User Routes (`/users`)
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| POST | `/users/location` | User | ✅ |
+| GET | `/users/profile` | User | ✅ |
+| PUT | `/users/profile` | User | ✅ |
+| GET | `/users/shops/following` | User | ✅ |
+| POST | `/users/shops/:id/follow` | User | ✅ |
+| DELETE | `/users/shops/:id/follow` | User | ✅ |
+| POST | `/users/push-token` | User | ❌ register Expo push token |
+| GET | `/users/redemptions` | User | ❌ redemption history |
+| GET | `/users/favorites/shops` | User | ❌ (API client calls this, no route) |
+| GET | `/users/favorites/promotions` | User | ❌ |
+| POST | `/users/favorites/promotions/:id` | User | ❌ |
+| DELETE | `/users/favorites/promotions/:id` | User | ❌ |
+
+#### Notifications Routes
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| POST | `/notifications/subscribe` | User | ❌ store VAPID subscription |
+| GET | `/notifications` | User | ❌ list user notifications |
+| PATCH | `/notifications/:id/read` | User | ❌ mark as read |
+
+#### Discovery Routes
+
+| Method | Path | Auth | Status |
+|---|---|---|---|
+| GET | `/discovery/feed` | User | ❌ return discovered shops |
+| POST | `/discovery/dismiss/:shopId` | User | ❌ dismiss a shop |
+| POST | `/discovery/not-interested/:shopId` | User | ❌ |
+
+---
+
+## 4. Database Architecture
+
+### 4.1 Current Schema Summary
+
+The Prisma schema at `packages/backend/prisma/schema.prisma` already contains all necessary models:
+
+| Model | Purpose | Status |
+|---|---|---|
+| `Shop` | Merchant account | ✅ Complete |
+| `ShopLocation` | Physical store addresses with lat/lon | ✅ Complete |
+| `Promotion` | Promotion definitions with geofencing | ✅ Complete |
+| `User` | Customer accounts | ✅ Complete |
+| `UserLocation` | Last known user coordinates | ✅ Complete |
+| `UserShopPreference` | Followed shops | ✅ Complete |
+| `PromotionView` | View analytics events | ✅ Complete |
+| `PromotionRedemption` | Redemption records + codes | ✅ Complete |
+| `Notification` | Notification delivery log | ✅ Complete |
+| `DiscoveryExposure` | Discovery mode tracking per user/shop | ✅ Complete |
+| `PushSubscription` | Web Push VAPID subscriptions | ✅ Complete |
+
+### 4.2 Schema Additions Required
+
+The current schema models are sufficient for V1. However, the following fields/tables need to be added:
+
+#### Add to `Shop` model
+```prisma
+// Missing — referenced in auth.service.ts:154 but not in schema
+lastLoginAt  DateTime? @map("last_login_at")
+status       String    @default("active")  // referenced in auth.service.ts but missing
+```
+
+> **Action**: Run `npx prisma migrate dev --name add-shop-status-lastlogin`
+
+#### Add `PushToken` model (for Expo push tokens — different from VAPID `PushSubscription`)
+```prisma
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique              // Expo push token: ExponentPushToken[...]
+  platform  String                        // "ios" | "android"
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
+}
+```
+
+#### Add `UserFavoritePromotion` model
+```prisma
+model UserFavoritePromotion {
+  userId      String   @map("user_id")
+  promotionId String   @map("promotion_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, promotionId])
+  @@map("user_favorite_promotions")
+}
+```
+
+### 4.3 Database Indexes for Performance
+
+Add these to the schema for production query performance:
+
+```prisma
+// On PromotionRedemption — for shop owner lookups
+@@index([shopLocationId])   // currently missing
+
+// On Notification
+@@index([createdAt])        // for date-range queries in analytics
+
+// On PushToken
+@@index([platform])         // for batching by platform
+```
+
+### 4.4 PostGIS Query Strategy
+
+The nearby promotions query in `promotions.service.ts:203` uses raw SQL with `ST_DWithin` and `ST_MakePoint`. This is correct. The geofence worker will use the same pattern to find users within active promotion radii:
 
 ```sql
--- Shops/Merchants
-CREATE TABLE shops (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  logo_url TEXT,
-  description TEXT,
-  category VARCHAR(100),
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Shop Locations (physical stores)
-CREATE TABLE shop_locations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  address TEXT NOT NULL,
-  city VARCHAR(100),
-  state VARCHAR(100),
-  country VARCHAR(100),
-  postal_code VARCHAR(20),
-  coordinates GEOGRAPHY(POINT, 4326) NOT NULL, -- PostGIS
-  phone VARCHAR(50),
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_shop_locations_coordinates ON shop_locations USING GIST(coordinates);
-
--- Promotions/Offers
-CREATE TABLE promotions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
-  title VARCHAR(255) NOT NULL,
-  description TEXT NOT NULL,
-  terms_conditions TEXT,
-  discount_type VARCHAR(50), -- 'percentage', 'fixed_amount', 'free_item', 'bogo'
-  discount_value DECIMAL(10, 2),
-  image_url TEXT,
-
-  -- Targeting
-  target_type VARCHAR(50) NOT NULL, -- 'all_locations', 'specific_locations'
-  radius_meters INTEGER NOT NULL, -- e.g., 300 for 300m, 15000 for 15km
-
-  -- Timing
-  start_date TIMESTAMP NOT NULL,
-  end_date TIMESTAMP NOT NULL,
-  is_active BOOLEAN DEFAULT true,
-
-  -- Usage limits
-  max_redemptions_per_user INTEGER DEFAULT 1,
-  max_total_redemptions INTEGER,
-  current_redemptions INTEGER DEFAULT 0,
-
-  -- Metadata
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  created_by UUID REFERENCES shops(id)
-);
-
-CREATE INDEX idx_promotions_dates ON promotions(start_date, end_date);
-CREATE INDEX idx_promotions_shop ON promotions(shop_id);
-
--- Junction table for promotions targeting specific locations
-CREATE TABLE promotion_locations (
-  promotion_id UUID REFERENCES promotions(id) ON DELETE CASCADE,
-  location_id UUID REFERENCES shop_locations(id) ON DELETE CASCADE,
-  PRIMARY KEY (promotion_id, location_id)
-);
-
--- Users/Customers
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email VARCHAR(255) UNIQUE,
-  phone VARCHAR(50) UNIQUE,
-  first_name VARCHAR(100),
-  last_name VARCHAR(100),
-  password_hash VARCHAR(255),
-  avatar_url TEXT,
-
-  -- Notification preferences
-  push_notifications_enabled BOOLEAN DEFAULT true,
-  email_notifications_enabled BOOLEAN DEFAULT true,
-  notification_radius_meters INTEGER DEFAULT 5000, -- default 5km
-
-  -- Privacy
-  location_sharing_enabled BOOLEAN DEFAULT true,
-
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  last_login TIMESTAMP
-);
-
--- User's last known location (for proximity matching)
-CREATE TABLE user_locations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  coordinates GEOGRAPHY(POINT, 4326) NOT NULL,
-  accuracy_meters DECIMAL(10, 2),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_user_locations_coordinates ON user_locations USING GIST(coordinates);
-CREATE INDEX idx_user_locations_user ON user_locations(user_id);
-
--- User notification preferences per shop/category
-CREATE TABLE user_shop_preferences (
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
-  notifications_enabled BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, shop_id)
-);
-
--- Promotion views (analytics)
-CREATE TABLE promotion_views (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  promotion_id UUID REFERENCES promotions(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  viewed_at TIMESTAMP DEFAULT NOW(),
-  user_distance_meters INTEGER
-);
-
--- Promotion redemptions
-CREATE TABLE promotion_redemptions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  promotion_id UUID REFERENCES promotions(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  shop_location_id UUID REFERENCES shop_locations(id) ON DELETE SET NULL,
-  redeemed_at TIMESTAMP DEFAULT NOW(),
-  redemption_code VARCHAR(50) UNIQUE,
-  is_verified BOOLEAN DEFAULT false,
-  verified_at TIMESTAMP
-);
-
-CREATE INDEX idx_redemptions_promotion ON promotion_redemptions(promotion_id);
-CREATE INDEX idx_redemptions_user ON promotion_redemptions(user_id);
-
--- Notification queue/log
-CREATE TABLE notifications (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  promotion_id UUID REFERENCES promotions(id) ON DELETE CASCADE,
-  notification_type VARCHAR(50), -- 'push', 'email', 'sms'
-  status VARCHAR(50), -- 'pending', 'sent', 'failed', 'read'
-  sent_at TIMESTAMP,
-  read_at TIMESTAMP,
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_notifications_user_status ON notifications(user_id, status);
-```
-
-### Key Design Decisions
-
-1. **PostGIS Geography Type**: Uses SRID 4326 (WGS84) for accurate distance calculations
-2. **UUID Primary Keys**: Better for distributed systems and privacy
-3. **Soft Deletes**: `is_active` flags instead of hard deletes
-4. **Denormalization**: `current_redemptions` for performance
-5. **Flexible Promotion Targeting**: Supports all locations or specific ones
-6. **User Privacy**: Separate preferences table, location sharing controls
-
----
-
-## 4. API DESIGN
-
-### RESTful API Endpoints
-
-#### Shop Dashboard API
-
-```
-Authentication
-POST   /api/auth/shop/register
-POST   /api/auth/shop/login
-POST   /api/auth/shop/refresh
-POST   /api/auth/shop/logout
-
-Shop Management
-GET    /api/shops/me
-PUT    /api/shops/me
-PATCH  /api/shops/me/logo
-
-Locations
-GET    /api/shops/locations
-POST   /api/shops/locations
-GET    /api/shops/locations/:id
-PUT    /api/shops/locations/:id
-DELETE /api/shops/locations/:id
-
-Promotions
-GET    /api/shops/promotions
-POST   /api/shops/promotions
-GET    /api/shops/promotions/:id
-PUT    /api/shops/promotions/:id
-DELETE /api/shops/promotions/:id
-PATCH  /api/shops/promotions/:id/toggle-active
-
-Analytics
-GET    /api/shops/analytics/overview
-GET    /api/shops/analytics/promotions/:id
-GET    /api/shops/analytics/redemptions
-
-Redemption Verification
-POST   /api/shops/redemptions/verify
-GET    /api/shops/redemptions
-```
-
-#### Customer App API
-
-```
-Authentication
-POST   /api/auth/user/register
-POST   /api/auth/user/login
-POST   /api/auth/user/refresh
-POST   /api/auth/user/logout
-
-User Profile
-GET    /api/users/me
-PUT    /api/users/me
-PATCH  /api/users/me/preferences
-
-Location
-PUT    /api/users/location
-GET    /api/users/nearby-shops
-
-Promotions (Location-Based)
-GET    /api/promotions/nearby
-  Query params:
-    - lat: number (required)
-    - lng: number (required)
-    - radius: number (optional, default user preference)
-    - category: string (optional)
-
-GET    /api/promotions/:id
-POST   /api/promotions/:id/view
-POST   /api/promotions/:id/redeem
-
-Shop Preferences
-GET    /api/users/shop-preferences
-PUT    /api/users/shop-preferences/:shopId
-
-Notifications
-GET    /api/notifications
-PATCH  /api/notifications/:id/read
-DELETE /api/notifications/:id
-```
-
-### WebSocket Events (Real-Time)
-
-```javascript
-// Client subscribes to location-based updates
-socket.on('connect', () => {
-  socket.emit('subscribe:location', { lat, lng, radius });
-});
-
-// Server pushes new promotions
-socket.on('promotion:new', (promotion) => {
-  // Show notification to user
-});
-
-// Location updates
-socket.emit('location:update', { lat, lng });
-```
-
----
-
-## 5. LOCATION SERVICES IMPLEMENTATION
-
-### Client-Side Geolocation
-
-#### PWA/Web Approach
-
-```javascript
-// Continuous location tracking with optimization
-const watchLocation = () => {
-  if (!navigator.geolocation) {
-    throw new Error('Geolocation not supported');
-  }
-
-  const watchId = navigator.geolocation.watchPosition(
-    (position) => {
-      const { latitude, longitude, accuracy } = position.coords;
-
-      // Update backend only if significant movement (>50m)
-      if (hasMovedSignificantly(latitude, longitude)) {
-        updateUserLocation({ latitude, longitude, accuracy });
-      }
-    },
-    (error) => handleLocationError(error),
-    {
-      enableHighAccuracy: true,
-      maximumAge: 30000, // 30 seconds
-      timeout: 27000
-    }
-  );
-
-  return watchId;
-};
-```
-
-#### Background Location Tracking
-
-For PWA, use Service Workers:
-
-```javascript
-// service-worker.js
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'update-location') {
-    event.waitUntil(updateLocation());
-  }
-});
-```
-
-### Server-Side Geospatial Queries
-
-#### Finding Nearby Promotions (PostgreSQL + PostGIS)
-
-```sql
--- Find all active promotions within user's radius
-SELECT
-  p.*,
-  s.name as shop_name,
-  s.logo_url as shop_logo,
-  sl.name as location_name,
-  sl.address,
-  ST_Distance(
-    sl.coordinates::geography,
-    ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
-  ) as distance_meters
-FROM promotions p
-JOIN shops s ON p.shop_id = s.id
-JOIN promotion_locations pl ON p.id = pl.promotion_id
-JOIN shop_locations sl ON pl.location_id = sl.id
+-- Geofence match query (to run in worker every 5 minutes)
+SELECT DISTINCT u.id, u.email, p.id as promotion_id, p.title
+FROM users u
+JOIN user_locations ul ON ul.user_id = u.id
+JOIN promotions p ON p.status = 'active' AND p.end_date >= NOW()
+JOIN shops s ON s.id = p.shop_id AND s.is_active = true
+JOIN shop_locations sl ON sl.shop_id = s.id AND sl.is_active = true
 WHERE
-  p.is_active = true
-  AND p.start_date <= NOW()
-  AND p.end_date >= NOW()
+  u.push_notifications_enabled = true
+  AND (p.target_all_locations = true OR sl.id = ANY(p.target_location_ids))
   AND ST_DWithin(
-    sl.coordinates::geography,
-    ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+    ST_MakePoint(ul.longitude, ul.latitude)::geography,
+    ST_MakePoint(sl.longitude, sl.latitude)::geography,
     p.radius_meters
   )
-ORDER BY distance_meters ASC
-LIMIT 50;
-```
-
-#### Redis Geo-Caching
-
-Cache shop locations for fast proximity lookups:
-
-```javascript
-// Cache shop locations in Redis
-await redis.geoadd(
-  'shop:locations',
-  longitude,
-  latitude,
-  locationId
-);
-
-// Query nearby locations
-const nearbyLocations = await redis.georadius(
-  'shop:locations',
-  userLongitude,
-  userLatitude,
-  radius,
-  'km',
-  'WITHDIST',
-  'ASC'
-);
-```
-
-### Geofencing Strategy
-
-```javascript
-// Backend service to match users with new promotions
-class GeofenceService {
-  async checkProximityForNewPromotion(promotionId) {
-    const promotion = await getPromotion(promotionId);
-
-    // Find all users within the promotion's radius
-    const nearbyUsers = await db.query(`
-      SELECT u.id, u.push_token,
-             ST_Distance(ul.coordinates, $1) as distance
-      FROM users u
-      JOIN user_locations ul ON u.id = ul.user_id
-      WHERE
-        u.push_notifications_enabled = true
-        AND u.location_sharing_enabled = true
-        AND ST_DWithin(ul.coordinates, $1, $2)
-    `, [promotionLocation, promotion.radius_meters]);
-
-    // Queue notifications
-    await notificationQueue.addBulk(
-      nearbyUsers.map(user => ({
-        userId: user.id,
-        promotionId: promotion.id,
-        type: 'new_promotion_nearby'
-      }))
-    );
-  }
-}
+  AND ul.updated_at >= NOW() - INTERVAL '10 minutes'  -- only recently-active users
 ```
 
 ---
 
-## 6. NOTIFICATION SYSTEM
+## 5. Customer App Architecture
 
-### Push Notification Architecture
+### 5.1 Navigation Structure (Complete Target)
 
 ```
-┌─────────────┐
-│   Backend   │
-│   Service   │
-└──────┬──────┘
-       │
-       │ Enqueue notification jobs
-       ▼
-┌─────────────┐
-│   BullMQ    │
-│   Queue     │
-└──────┬──────┘
-       │
-       │ Process jobs with retry
-       ▼
-┌─────────────────────┐
-│ Notification Worker │
-└──────┬──────────────┘
-       │
-       ├─► Firebase Cloud Messaging (FCM)
-       │   └─► Android/iOS Push
-       │
-       ├─► Web Push API
-       │   └─► PWA Notifications
-       │
-       └─► Email Service (SendGrid/Resend)
-           └─► Email Notifications
+app/
+├── _layout.tsx                    # Root — auth gate, query client, location init
+│
+├── onboarding.tsx                 ✅  # Shown once on first launch
+│
+├── auth/
+│   ├── login.tsx                  ✅
+│   └── register.tsx               ✅
+│
+├── (tabs)/
+│   ├── _layout.tsx                ✅  # Tab bar: Home | Discover | Saved | Profile
+│   ├── index.tsx                  ✅  # Home — nearby promotions feed
+│   ├── discovery.tsx              ✅  # Discovery mode + discovered shops
+│   ├── favorites.tsx              ⚠️  # Saved promotions + followed shops
+│   ├── profile.tsx                ⚠️  # Settings, notifications, location prefs
+│   └── redeemed.tsx               ❌  # Redemption history tab — ADD THIS
+│
+├── promotion/
+│   └── [id].tsx                   ✅  # Promotion detail — "Redeem" button live
+│
+├── shop/
+│   └── [id].tsx                   ✅  # Shop public profile
+│
+└── redemption/
+    └── [id].tsx                   ❌  # QR code display screen — ADD THIS
 ```
 
-### Implementation
+### 5.2 State Management
 
-#### 1. Service Worker (PWA)
+All stores live in `packages/customer-app/src/stores/`:
 
-```javascript
-// Register service worker
-if ('serviceWorker' in navigator) {
-  const registration = await navigator.serviceWorker.register('/sw.js');
+| Store | File | Purpose | Status |
+|---|---|---|---|
+| `useAuthStore` | `authStore.ts` | user, token, refreshToken, isAuthenticated | ✅ persisted to AsyncStorage |
+| `useLocationStore` | `locationStore.ts` | currentLocation, permissionStatus | ✅ |
+| `useDiscoveryStore` | `discoveryStore.ts` | mode (off/active/silent) | ✅ |
+| `useNotificationStore` | ❌ to create | unread count, notification list | ❌ |
+| `useRedemptionStore` | ❌ to create | active redemption code, countdown | ❌ |
 
-  // Request notification permission
-  const permission = await Notification.requestPermission();
+### 5.3 Location & Geofencing Architecture
 
-  if (permission === 'granted') {
-    // Subscribe to push notifications
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: VAPID_PUBLIC_KEY
-    });
+The location service at `src/services/location.ts` has all the infrastructure:
 
-    // Send subscription to backend
-    await fetch('/api/notifications/subscribe', {
-      method: 'POST',
-      body: JSON.stringify(subscription)
-    });
-  }
+```
+App Launch
+    │
+    ▼
+requestLocationPermissions()
+    │ granted
+    ▼
+getCurrentLocation() ──► update locationStore + POST /users/location
+    │
+    ▼
+startBackgroundLocationTracking()
+    Interval: 5 minutes OR 100m moved
+    Task: BACKGROUND_LOCATION_TASK
+        │ fires
+        ▼
+    updateUserLocation() → POST /users/location
+        │
+        ▼
+    [Backend worker sees new location]
+    [Matches against active promotions]
+    [Queues push notification via BullMQ]
+        │
+        ▼
+    Expo Push Notification received
+```
+
+**What's missing**: The geofence task handler at `location.ts:46` logs `'Entered geofence'` but does nothing further. The backend worker that reads user locations and matches them to promotions does not exist.
+
+### 5.4 Redemption Screen (`app/redemption/[id].tsx`)
+
+This screen must be created. Flow:
+
+```
+User taps "Redeem This Offer" on promotion/[id].tsx
+    │
+    ▼
+POST /api/v1/promotions/:id/redeem
+    │ Response: { code: "LOCO-ABC123", qrCodeBase64: "...", expiresAt: "..." }
+    ▼
+app/redemption/[id].tsx renders:
+    - Large QR code image (from base64)
+    - Text code "LOCO-ABC123" (large, monospace)
+    - Countdown timer (codes expire in 10 minutes)
+    - "Show to staff to redeem" instruction
+    - Share button (optional)
+```
+
+### 5.5 Push Notifications — Mobile Side
+
+The service at `src/services/notifications.ts` is complete. The missing link is:
+
+1. `registerPushToken()` in `notifications.ts:59` calls `Notifications.getExpoPushTokenAsync({ projectId: process.env.EAS_PROJECT_ID })` — the `EAS_PROJECT_ID` env var must be set and the real EAS project must be created.
+2. `registerPushToken(token)` in `api.ts:146` calls `POST /users/push-token` — **this route does not exist on the backend yet**.
+3. The app root layout must call `requestNotificationPermissions()` and `startBackgroundLocationTracking()` after login.
+
+### 5.6 App Configuration Gaps (`app.json`)
+
+| Item | Current Value | Required Action |
+|---|---|---|
+| `extra.eas.projectId` | `"your-project-id"` | Run `eas init`, replace with real ID |
+| `ios.config.googleMapsApiKey` | `"YOUR_GOOGLE_MAPS_API_KEY_IOS"` | Add real key from Google Cloud Console |
+| `android.config.googleMaps.apiKey` | `"YOUR_GOOGLE_MAPS_API_KEY_ANDROID"` | Add real key |
+| App icons | `./assets/icon.png` etc. | Create 1024×1024 PNG icon + splash |
+| `ios.buildNumber` | missing | Add `"1"` |
+| `android.versionCode` | missing | Add `1` |
+
+---
+
+## 6. Shop Dashboard Architecture
+
+### 6.1 Page Structure (Complete Target)
+
+```
+src/
+├── App.tsx                        ✅  # Router — all routes defined
+├── main.tsx                       ✅
+├── index.css                      ✅
+│
+├── components/
+│   ├── ProtectedRoute.tsx         ✅
+│   ├── Sidebar.tsx                ❌  # Navigation sidebar — currently inline in each page
+│   ├── StatCard.tsx               ❌  # Reusable metric card component
+│   ├── QRScanner.tsx              ❌  # Camera-based QR scanner for redemption verification
+│   └── Chart.tsx                  ❌  # Recharts wrapper for analytics
+│
+├── pages/
+│   ├── LoginPage.tsx              ✅
+│   ├── RegisterPage.tsx           ✅
+│   ├── DashboardPage.tsx          ⚠️  # Replace "-" placeholders with live data
+│   ├── LocationsPage.tsx          ✅
+│   ├── LocationFormPage.tsx       ✅
+│   ├── PromotionsPage.tsx         ✅
+│   ├── PromotionFormPage.tsx      ✅
+│   ├── ProfilePage.tsx            ✅
+│   ├── RedemptionVerifyPage.tsx   ❌  # QR scanner + manual code entry
+│   ├── RedemptionsPage.tsx        ❌  # History table with filters
+│   └── AnalyticsPage.tsx          ❌  # Per-promotion charts
+│
+├── lib/
+│   ├── api.ts                     ✅
+│   ├── locations-api.ts           ✅
+│   ├── promotions-api.ts          ✅
+│   ├── analytics-api.ts           ❌  # GET /shops/analytics/overview
+│   └── redemptions-api.ts         ❌  # GET + POST /shops/redemptions/*
+│
+└── stores/
+    └── authStore.ts               ✅
+```
+
+### 6.2 Dashboard Home — Required Live Metrics
+
+Replace the current placeholder content in `DashboardPage.tsx:93-103` with API-driven data from `GET /api/v1/shops/analytics/overview`:
+
+```typescript
+interface AnalyticsOverview {
+  activePromotions: number;
+  totalViews24h: number;
+  totalViews7d: number;
+  totalRedemptions24h: number;
+  totalRedemptions7d: number;
+  conversionRate7d: string;           // e.g. "4.2%"
+  topPromotion: { id: string; title: string; views: number } | null;
 }
 ```
 
-#### 2. Backend Notification Service
+### 6.3 Redemption Verification Flow (Shop Dashboard)
 
-```typescript
-// notification.service.ts
-import admin from 'firebase-admin';
-import webpush from 'web-push';
-import { Queue } from 'bullmq';
+```
+Staff opens /verify
+    │
+    ▼
+Option A: QR Scanner (desktop/mobile browser)
+    - Uses react-qr-scanner or html5-qrcode library
+    - Decodes QR → extracts code string
+    │
+Option B: Manual entry
+    - Text input for code "LOCO-ABC123"
+    │
+    ▼ (either path)
+POST /api/v1/shops/redemptions/verify  { code: "LOCO-ABC123" }
+    │
+    ├── 200 OK → show promotion title, customer name, savings amount, green checkmark
+    └── 4xx → "Code already used" / "Code expired" / "Invalid code"
+```
 
-class NotificationService {
-  private notificationQueue: Queue;
+---
 
-  constructor() {
-    this.notificationQueue = new Queue('notifications', {
-      connection: redisConnection
-    });
+## 7. Notification System Architecture
 
-    // Initialize Firebase
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
+### 7.1 Overview
 
-    // Initialize Web Push
-    webpush.setVapidDetails(
-      'mailto:your@email.com',
-      VAPID_PUBLIC_KEY,
-      VAPID_PRIVATE_KEY
-    );
-  }
+LoCo uses **Expo Push Notifications** (not raw APNs/FCM directly) for the mobile app. Expo acts as a proxy to both APNs (iOS) and FCM (Android).
 
-  async sendPromotionNotification(userId: string, promotionId: string) {
-    // Add to queue for processing
-    await this.notificationQueue.add('promotion-notification', {
-      userId,
-      promotionId,
-      timestamp: Date.now()
-    }, {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 2000
-      }
-    });
-  }
-
-  async processNotification(job: Job) {
-    const { userId, promotionId } = job.data;
-
-    const user = await getUser(userId);
-    const promotion = await getPromotion(promotionId);
-
-    // Send to FCM for mobile
-    if (user.fcmToken) {
-      await admin.messaging().send({
-        token: user.fcmToken,
-        notification: {
-          title: promotion.title,
-          body: promotion.description,
-          imageUrl: promotion.image_url
-        },
-        data: {
-          promotionId: promotion.id,
-          type: 'new_promotion'
-        }
-      });
+```
+Backend Worker (every 5 min)
+    │
+    ▼
+[Query: users near active promotion radius]
+    │
+    ▼
+[For each match — check: not already notified in last 4h]
+    │
+    ▼
+BullMQ: enqueue notification job
+    │
+    ▼
+Notification Worker (consumer)
+    │
+    ▼
+Expo Push API: POST https://exp.host/--/api/v2/push/send
+    Body: {
+      to: "ExponentPushToken[xxxx]",
+      title: "☕ 20% off at Blue Bottle Coffee!",
+      body: "You're 150m away. Offer ends tonight.",
+      data: { promotionId: "uuid", shopId: "uuid" },
+      channelId: "promotions"
     }
+    │
+    ▼
+iOS APNs / Android FCM
+    │
+    ▼
+User device receives notification
+    │ Tap
+    ▼
+app navigates to /promotion/:id
+```
 
-    // Send Web Push for PWA
-    if (user.webPushSubscription) {
-      await webpush.sendNotification(
-        user.webPushSubscription,
-        JSON.stringify({
-          title: promotion.title,
-          body: promotion.description,
-          icon: promotion.image_url,
-          data: { promotionId: promotion.id }
-        })
-      );
-    }
+### 7.2 Backend Files to Create
 
-    // Log notification
-    await db.notifications.create({
-      userId,
-      promotionId,
-      status: 'sent',
-      sentAt: new Date()
-    });
-  }
+#### `src/shared/services/expo-push.service.ts`
+```typescript
+// Wraps the Expo Push API
+// Handles chunking (max 100 per request)
+// Handles TicketError / DeviceNotRegistered cleanup
+export class ExpoPushService {
+  static async sendNotifications(messages: ExpoPushMessage[]): Promise<void>
+  static async checkTickets(tickets: ExpoPushTicket[]): Promise<void>
 }
 ```
 
-### Notification Triggers
+#### `src/modules/notifications/notifications.service.ts`
+```typescript
+export class NotificationsService {
+  static async registerPushToken(userId: string, token: string, platform: string): Promise<void>
+  static async sendProximityNotification(userId: string, promotionId: string): Promise<void>
+  static async getUserNotifications(userId: string): Promise<Notification[]>
+  static async markAsRead(notificationId: string, userId: string): Promise<void>
+}
+```
 
-1. **Location-Based**: User enters promotion geofence
-2. **Time-Based**: New promotion created (batch to nearby users)
-3. **Event-Based**:
-   - Promotion ending soon (24h warning)
-   - Limited redemptions remaining
-   - Favorite shop new promotion
+#### `src/workers/notification.worker.ts`
+```typescript
+// BullMQ consumer for 'notifications' queue
+// Processes each job: calls ExpoPushService.sendNotifications()
+// On DeviceNotRegistered error: deletes the push token from DB
+const worker = new Worker('notifications', async (job) => { ... }, { connection: redis });
+```
 
-### User Preferences
+#### `src/workers/geofence.worker.ts`
+```typescript
+// Runs every 5 minutes via BullMQ repeatable job
+// 1. Queries PostgreSQL with the ST_DWithin PostGIS query
+// 2. Filters: user hasn't been notified about this promotion in last 4 hours
+//    (check notifications table: WHERE userId = X AND promotionId = Y AND createdAt > NOW() - 4h)
+// 3. Enqueues a job on 'notifications' queue for each match
+// 4. Writes a record to notifications table with status='pending'
+const worker = new Worker('geofence', geofenceJob, { connection: redis });
+await queue.add('geofence-scan', {}, { repeat: { every: 5 * 60 * 1000 } });
+```
+
+#### `src/workers/promotion-lifecycle.worker.ts`
+```typescript
+// Runs every 1 minute
+// Auto-activates promotions where startDate <= NOW() AND status = 'draft'
+// Auto-expires promotions where endDate < NOW() AND status = 'active'
+```
+
+### 7.3 BullMQ Queue Setup
+
+Add to `src/index.ts` (alongside Fastify startup):
 
 ```typescript
-interface NotificationPreferences {
-  pushEnabled: boolean;
-  emailEnabled: boolean;
-  radius: number; // meters
-  categories: string[]; // ['food', 'retail', 'entertainment']
-  mutedShops: string[]; // shop IDs
-  quietHours: {
-    enabled: boolean;
-    start: string; // "22:00"
-    end: string; // "08:00"
-  };
-  frequency: 'realtime' | 'digest_daily' | 'digest_weekly';
-}
+import { startWorkers } from './workers/index';
+await startWorkers(); // starts geofence, notification, lifecycle workers
 ```
 
----
-
-## 7. SECURITY CONSIDERATIONS
-
-### Authentication & Authorization
-
-1. **JWT Tokens**
-   - Access token (15 min expiry)
-   - Refresh token (7 days expiry)
-   - HTTP-only cookies for web
-   - Secure token storage on mobile
-
-2. **Password Requirements**
-   - Minimum 8 characters
-   - bcrypt hashing (cost factor 12)
-   - Rate limiting on login attempts
-
-3. **API Security**
-   - CORS configuration
-   - Rate limiting (express-rate-limit)
-   - Input validation (Zod)
-   - SQL injection prevention (parameterized queries)
-   - XSS protection (helmet.js)
-
-### Privacy Considerations
-
-1. **Location Data**
-   - User consent required
-   - Configurable tracking precision
-   - Automatic data expiration (7 days)
-   - No location history storage beyond necessary
-   - GDPR compliance
-
-2. **User Data**
-   - Minimal data collection
-   - Right to deletion
-   - Data export capability
-   - Encrypted at rest
-   - Anonymized analytics
-
-### Location Privacy
-
-```typescript
-// Fuzzy location for privacy
-function fuzzyLocation(lat: number, lng: number, precision: number = 100) {
-  // Round to nearest 100 meters for privacy
-  const factor = 1 / (precision / 111320); // degrees per meter
-  return {
-    lat: Math.round(lat / factor) * factor,
-    lng: Math.round(lng / factor) * factor
-  };
-}
-```
-
----
-
-## 8. PERFORMANCE OPTIMIZATION
-
-### Caching Strategy
-
-```typescript
-// Multi-layer caching
-class CacheService {
-  // 1. In-memory cache (fastest)
-  private memoryCache = new Map();
-
-  // 2. Redis cache (fast, shared)
-  private redis: Redis;
-
-  // 3. Database (slowest)
-
-  async getNearbyPromotions(lat: number, lng: number, radius: number) {
-    const cacheKey = `promotions:${lat.toFixed(2)}:${lng.toFixed(2)}:${radius}`;
-
-    // Check memory
-    if (this.memoryCache.has(cacheKey)) {
-      return this.memoryCache.get(cacheKey);
-    }
-
-    // Check Redis
-    const cached = await this.redis.get(cacheKey);
-    if (cached) {
-      const data = JSON.parse(cached);
-      this.memoryCache.set(cacheKey, data);
-      return data;
-    }
-
-    // Query database
-    const promotions = await db.getNearbyPromotions(lat, lng, radius);
-
-    // Cache for 5 minutes
-    await this.redis.setex(cacheKey, 300, JSON.stringify(promotions));
-    this.memoryCache.set(cacheKey, promotions);
-
-    return promotions;
-  }
-}
-```
-
-### Database Optimization
-
-1. **Indexes**
-   - Geospatial indexes (GIST) on coordinates
-   - Composite indexes on frequently queried columns
-   - Partial indexes for active promotions
-
-2. **Query Optimization**
-   - Use `EXPLAIN ANALYZE` for query planning
-   - Limit result sets
-   - Paginate large datasets
-   - Use database connection pooling
-
-3. **Read Replicas**
-   - Separate read/write databases
-   - Route analytics queries to replicas
-
-### Frontend Performance
-
-1. **Code Splitting**
-   - Route-based splitting
-   - Lazy load heavy components
-   - Dynamic imports
-
-2. **Image Optimization**
-   - WebP format with fallbacks
-   - Responsive images
-   - CDN delivery
-   - Lazy loading
-
-3. **PWA Optimization**
-   - Service worker caching
-   - Offline functionality
-   - App shell architecture
-   - Precache critical assets
-
----
-
-## 9. ANALYTICS & METRICS
-
-### Key Metrics to Track
-
-#### Shop Dashboard
-
-```typescript
-interface ShopAnalytics {
-  promotions: {
-    totalViews: number;
-    uniqueViews: number;
-    totalRedemptions: number;
-    conversionRate: number; // redemptions / views
-    avgDistanceOfViewers: number;
-    peakViewTimes: TimeDistribution;
-  };
-
-  locations: {
-    performanceByLocation: LocationMetrics[];
-    footTraffic: number; // users who came within radius
-  };
-
-  revenue: {
-    estimatedImpact: number;
-    costPerRedemption: number;
-  };
-}
-```
-
-#### Platform Analytics
-
-```typescript
-interface PlatformMetrics {
-  users: {
-    totalActive: number;
-    newSignups: number;
-    retention: RetentionCohorts;
-    avgSessionDuration: number;
-  };
-
-  promotions: {
-    totalActive: number;
-    avgViewsPerPromotion: number;
-    avgRedemptionRate: number;
-    popularCategories: CategoryStats[];
-  };
-
-  geography: {
-    activeRegions: RegionStats[];
-    coverageHeatmap: HeatmapData;
-  };
-}
-```
-
-### Implementation
-
-```typescript
-// Analytics service using ClickHouse or TimescaleDB
-class AnalyticsService {
-  async trackPromotionView(data: {
-    promotionId: string;
-    userId: string;
-    distance: number;
-    timestamp: Date;
-  }) {
-    // Fast write to analytics database
-    await analyticsDB.insert('promotion_views', data);
-
-    // Update counters in Redis
-    await redis.hincrby(`promotion:${data.promotionId}`, 'views', 1);
-  }
-
-  async getPromotionAnalytics(promotionId: string, timeRange: TimeRange) {
-    return {
-      views: await this.getViewMetrics(promotionId, timeRange),
-      redemptions: await this.getRedemptionMetrics(promotionId, timeRange),
-      demographics: await this.getDemographics(promotionId, timeRange)
-    };
-  }
-}
-```
-
----
-
-## 10. MOBILE CONSIDERATIONS
-
-### Progressive Web App (PWA) Requirements
-
+Required npm packages to add to `packages/backend/package.json`:
 ```json
-// manifest.json
-{
-  "name": "PromoNear",
-  "short_name": "PromoNear",
-  "description": "Discover nearby promotions",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#4F46E5",
-  "icons": [
-    {
-      "src": "/icons/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Nearby Offers",
-      "url": "/nearby",
-      "icons": [{ "src": "/icons/nearby.png", "sizes": "96x96" }]
-    }
-  ],
-  "categories": ["shopping", "lifestyle"],
-  "permissions": ["geolocation", "notifications"]
+"bullmq": "^5.x",
+"expo-server-sdk": "^3.x"
+```
+
+---
+
+## 8. Redemption System Architecture
+
+### 8.1 Redemption Code Format
+
+- Format: `LOCO-[A-Z0-9]{6}` (e.g. `LOCO-K7X9P2`)
+- Stored in `PromotionRedemption.redemptionCode` (already `@unique` in schema)
+- Expires: 10 minutes after generation (enforce in service, not schema)
+- Single-use: enforced by `isVerified` flag + `verifiedAt` timestamp
+
+### 8.2 QR Code Content
+
+The QR code encodes a URL that the shop's dashboard scanner can read:
+```
+https://dashboard.loco.app/verify?code=LOCO-K7X9P2
+```
+
+This allows staff to either:
+1. Open the QR scanner in the dashboard app
+2. Physically hand the phone — the URL auto-fills the verification field
+
+### 8.3 Backend: Redemption Module
+
+#### `src/modules/redemptions/redemptions.service.ts`
+```typescript
+export class RedemptionsService {
+
+  static async redeemPromotion(promotionId: string, userId: string): Promise<RedemptionResult>
+  // Checks:
+  // 1. Promotion exists, is active, not expired
+  // 2. maxRedemptionsPerUser not exceeded for this user
+  // 3. maxTotalRedemptions not exceeded
+  // Generates: unique code using nanoid or crypto.randomBytes
+  // Creates: PromotionRedemption record { isVerified: false }
+  // Returns: { code, qrCodeBase64, expiresAt }
+
+  static async verifyCode(code: string, shopId: string): Promise<VerifyResult>
+  // Checks:
+  // 1. Code exists in PromotionRedemption
+  // 2. Not already verified (isVerified === false)
+  // 3. Created within last 10 minutes (createdAt + 10min > NOW())
+  // 4. Promotion belongs to this shopId (security check)
+  // Updates: isVerified = true, verifiedAt = NOW()
+  // Increments: promotion.currentRedemptions
+  // Returns: promotion details, customer name, savings
+
+  static async getUserRedemptions(userId: string): Promise<PromotionRedemption[]>
+  static async getShopRedemptions(shopId: string, filters?: RedemptionFilters): Promise<PromotionRedemption[]>
 }
 ```
 
-### Offline Functionality
-
-```javascript
-// Service worker cache strategy
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      // Cache hit - return cached response
-      if (response) {
-        return response;
-      }
-
-      // Network with cache fallback
-      return fetch(event.request).then((response) => {
-        // Cache successful responses
-        if (response.ok) {
-          const responseToCache = response.clone();
-          caches.open('dynamic-v1').then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return response;
-      }).catch(() => {
-        // Return offline page if network fails
-        return caches.match('/offline.html');
-      });
-    })
-  );
-});
+#### `src/modules/redemptions/redemptions.routes.ts`
+```typescript
+// POST /promotions/:id/redeem        — authenticateUser
+// POST /shops/redemptions/verify     — authenticateShop
+// GET  /users/redemptions            — authenticateUser
+// GET  /shops/redemptions            — authenticateShop
 ```
 
-### Battery & Data Optimization
+### 8.4 QR Code Generation
 
-```javascript
-// Adaptive location tracking based on battery
-const getBatteryStatus = async () => {
-  const battery = await navigator.getBattery();
-  return {
-    level: battery.level,
-    charging: battery.charging
-  };
-};
+Use the `qrcode` npm package server-side to generate a base64 PNG:
+```typescript
+import QRCode from 'qrcode';
 
-const getLocationUpdateInterval = async () => {
-  const battery = await getBatteryStatus();
+const qrCodeBase64 = await QRCode.toDataURL(
+  `https://dashboard.loco.app/verify?code=${code}`,
+  { width: 300, margin: 2 }
+);
+```
 
-  if (battery.charging) {
-    return 30000; // 30 seconds when charging
-  } else if (battery.level > 0.5) {
-    return 60000; // 1 minute with good battery
-  } else if (battery.level > 0.2) {
-    return 300000; // 5 minutes with medium battery
-  } else {
-    return 600000; // 10 minutes with low battery
-  }
-};
+Add to `packages/backend/package.json`: `"qrcode": "^1.5.x"`
+
+### 8.5 Customer App: Redemption Screen
+
+**New file**: `packages/customer-app/app/redemption/[id].tsx`
+
+```
+State:
+  - loading: boolean
+  - redemption: { code, qrCodeBase64, expiresAt } | null
+  - secondsRemaining: number
+  - isExpired: boolean
+
+On mount:
+  - POST /promotions/:id/redeem
+  - Start countdown interval (expiresAt - now)
+
+Render:
+  ┌──────────────────────────────┐
+  │  Redeeming: "20% Off Coffee" │
+  │                              │
+  │    [QR Code — 250×250px]     │
+  │                              │
+  │        LOCO-K7X9P2           │  ← large monospace text
+  │                              │
+  │    ⏱ Expires in 08:43        │  ← countdown
+  │                              │
+  │  Show this to staff          │
+  └──────────────────────────────┘
+
+On expiry:
+  - Show "Code expired. Tap to get a new code."
+  - Disable countdown, show refresh button
 ```
 
 ---
 
-## 11. TESTING STRATEGY
+## 9. Analytics Architecture
 
-### Backend Testing
+### 9.1 Data Sources
 
+All analytics data is derived from existing tables:
+- `PromotionView` — view events (promotionId, userId, viewedAt, userDistanceMeters)
+- `PromotionRedemption` — redemption events (promotionId, userId, redeemedAt, isVerified)
+- `Promotion.currentRedemptions` — denormalized redemption count
+
+### 9.2 Analytics API Endpoints
+
+#### `GET /api/v1/shops/analytics/overview`
+Returns aggregate metrics for the shop dashboard home:
 ```typescript
-// Unit tests
-describe('GeoService', () => {
-  it('should calculate distance correctly', () => {
-    const distance = geoService.calculateDistance(
-      { lat: 40.7128, lng: -74.0060 }, // NYC
-      { lat: 34.0522, lng: -118.2437 }  // LA
-    );
-    expect(distance).toBeCloseTo(3936000, -3); // ~3936km
-  });
-
-  it('should find promotions within radius', async () => {
-    const promotions = await promotionService.getNearbyPromotions({
-      lat: 40.7128,
-      lng: -74.0060,
-      radius: 1000
-    });
-
-    promotions.forEach(promo => {
-      expect(promo.distance).toBeLessThan(1000);
-    });
-  });
-});
-
-// Integration tests
-describe('Promotion API', () => {
-  it('should create promotion and notify nearby users', async () => {
-    const promotion = await createTestPromotion();
-    const notifications = await waitForNotifications();
-
-    expect(notifications.length).toBeGreaterThan(0);
-    expect(notifications[0].promotionId).toBe(promotion.id);
-  });
-});
+{
+  activePromotions: number,
+  totalViews: { "24h": number, "7d": number, "30d": number },
+  totalRedemptions: { "24h": number, "7d": number, "30d": number },
+  conversionRate: { "7d": string },   // "4.2%"
+  topPromotion: { id, title, views, redemptions } | null
+}
 ```
 
-### E2E Testing
+#### `GET /api/v1/shops/analytics/promotions/:id`
+Returns detailed stats for a single promotion:
+```typescript
+{
+  promotionId: string,
+  views: PromotionView[],              // time-series for charting
+  redemptions: PromotionRedemption[],
+  totalViews: number,
+  uniqueViewers: number,
+  totalRedemptions: number,
+  conversionRate: string,
+  avgDistanceMeters: number,
+  viewsByDay: { date: string, count: number }[],   // last 30 days
+  redemptionsByDay: { date: string, count: number }[]
+}
+```
+
+### 9.3 Shop Dashboard Analytics Page
+
+Add `recharts` to `packages/shop-dashboard/package.json`.
+
+```
+AnalyticsPage.tsx layout:
+
+┌─────────────────────────────────────────────────┐
+│  Analytics Overview        [Last 7d ▼]          │
+├────────────┬──────────────┬─────────────────────┤
+│ 2,341 views│ 89 redemptions│  3.8% conversion   │
+├────────────┴──────────────┴─────────────────────┤
+│  Views Over Time (line chart)                   │
+│  ~~~~~~~~~~~~~~~                                │
+├─────────────────────────────────────────────────┤
+│  Top Promotions (table)                         │
+│  | Title | Views | Redeemed | Conversion |      │
+└─────────────────────────────────────────────────┘
+```
+
+### 9.4 Caching Analytics Queries
+
+Analytics overview queries should be cached in Redis (TTL: 5 minutes) to avoid repeated aggregation queries:
 
 ```typescript
-// Playwright E2E tests
-import { test, expect } from '@playwright/test';
-
-test('user receives notification for nearby promotion', async ({ page, context }) => {
-  // Mock geolocation
-  await context.setGeolocation({ latitude: 40.7128, longitude: -74.0060 });
-  await context.grantPermissions(['geolocation', 'notifications']);
-
-  await page.goto('/');
-  await page.click('[data-testid="enable-notifications"]');
-
-  // Create promotion via admin panel
-  await createPromotion({
-    location: { lat: 40.7130, lng: -74.0062 }, // 20m away
-    radius: 100
-  });
-
-  // Check notification received
-  await expect(page.locator('[data-testid="notification"]')).toBeVisible();
-});
+const cacheKey = `analytics:overview:${shopId}:7d`;
+const cached = await redis.get(cacheKey);
+if (cached) return JSON.parse(cached);
+// ... run query ...
+await redis.setex(cacheKey, 300, JSON.stringify(result));
 ```
 
 ---
 
-## 12. DEPLOYMENT ARCHITECTURE
+## 10. File Storage Architecture
 
-### Docker Setup
+### 10.1 What Needs File Storage
 
-```yaml
-# docker-compose.yml
-version: '3.8'
+| Asset | Who uploads | Where stored |
+|---|---|---|
+| Shop logo | Shop owner via dashboard | S3 / R2 |
+| Promotion image | Shop owner via dashboard | S3 / R2 |
+| User avatar | Customer via mobile app | S3 / R2 |
 
-services:
-  postgres:
-    image: postgis/postgis:15-3.3
-    environment:
-      POSTGRES_DB: promo_app
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+### 10.2 Storage Provider: Cloudflare R2 (Recommended)
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-  backend:
-    build: ./backend
-    environment:
-      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@postgres:5432/promo_app
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-    ports:
-      - "3000:3000"
-    depends_on:
-      - postgres
-      - redis
-
-  shop-dashboard:
-    build: ./shop-dashboard
-    ports:
-      - "4000:80"
-    depends_on:
-      - backend
-
-  customer-app:
-    build: ./customer-app
-    ports:
-      - "4001:80"
-    depends_on:
-      - backend
-
-volumes:
-  postgres_data:
-  redis_data:
-```
-
-### Environment Variables
+Cloudflare R2 is S3-compatible with no egress fees. Use the AWS SDK v3:
 
 ```bash
-# .env.example
-NODE_ENV=production
-
-# Database
-DATABASE_URL=postgresql://user:password@host:5432/database
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=promo_app
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=changeme
-
-# Redis
-REDIS_URL=redis://localhost:6379
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# JWT
-JWT_SECRET=your-secret-key-min-32-chars
-JWT_ACCESS_EXPIRY=15m
-JWT_REFRESH_EXPIRY=7d
-
-# Firebase
-FIREBASE_PROJECT_ID=your-project
-FIREBASE_PRIVATE_KEY=your-private-key
-FIREBASE_CLIENT_EMAIL=your-client-email
-
-# Web Push
-VAPID_PUBLIC_KEY=your-public-key
-VAPID_PRIVATE_KEY=your-private-key
-VAPID_MAILTO=mailto:your@email.com
-
-# AWS S3
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
-AWS_BUCKET_NAME=your-bucket
-AWS_REGION=us-east-1
-
-# Email
-SENDGRID_API_KEY=your-api-key
-EMAIL_FROM=noreply@yourapp.com
-
-# Frontend URLs
-SHOP_DASHBOARD_URL=https://dashboard.yourapp.com
-CUSTOMER_APP_URL=https://app.yourapp.com
-
-# API
-API_PORT=3000
-API_RATE_LIMIT=100
+# packages/backend
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
 ```
 
-### CI/CD Pipeline
+Environment variables:
+```env
+R2_ACCOUNT_ID=xxxx
+R2_ACCESS_KEY_ID=xxxx
+R2_SECRET_ACCESS_KEY=xxxx
+R2_BUCKET_NAME=loco-assets
+R2_PUBLIC_URL=https://assets.loco.app
+```
 
+### 10.3 Upload Flow
+
+**Shop dashboard** uploads images via presigned URL to avoid routing large binaries through the API server:
+
+```
+1. POST /api/v1/files/presign  { filename: "logo.png", contentType: "image/png" }
+   ← returns { uploadUrl: "https://r2.../...", publicUrl: "https://assets.loco.app/..." }
+
+2. Frontend: PUT uploadUrl with raw file bytes (direct to R2, no server involved)
+
+3. Frontend: PATCH /api/v1/shops/profile  { logoUrl: publicUrl }
+```
+
+### 10.4 Image Optimization
+
+Add `sharp` to backend for server-side resizing before storage:
+- Shop logo: resize to 512×512, convert to WebP
+- Promotion image: resize to max 1200px wide, convert to WebP
+- User avatar: resize to 256×256
+
+---
+
+## 11. Caching Architecture
+
+Redis is connected (`src/shared/config/redis.ts`) but not used anywhere in the codebase. The `CACHE_TTL` constants are defined but unused. Here is the complete caching strategy:
+
+### 11.1 Cache Keys and TTLs
+
+| Key Pattern | TTL | Populated By | Invalidated By |
+|---|---|---|---|
+| `nearby:{lat_grid}:{lon_grid}:{radius}` | 5 min | `GET /promotions/nearby` | Promotion create/update/activate |
+| `promotion:{id}` | 10 min | `GET /promotions/:id` | Promotion update |
+| `shop:{id}` | 10 min | `GET /shops/:id` | Shop profile update |
+| `analytics:overview:{shopId}:{period}` | 5 min | `GET /analytics/overview` | Any new view/redemption |
+| `discovery:{lat_grid}:{lon_grid}` | 15 min | `GET /shops/discovery` | New shop/location added |
+
+### 11.2 Location Grid Snapping
+
+For the nearby cache key, snap coordinates to a 500m grid to improve cache hit rate:
+
+```typescript
+const snapToGrid = (coord: number, gridSize = 0.005) =>
+  Math.round(coord / gridSize) * gridSize;
+// 0.005 degrees ≈ 500m
+const gridLat = snapToGrid(latitude);
+const gridLon = snapToGrid(longitude);
+const cacheKey = `nearby:${gridLat}:${gridLon}:${radiusMeters}`;
+```
+
+---
+
+## 12. Security Architecture
+
+### 12.1 Current Issues to Fix
+
+| Issue | Location | Fix |
+|---|---|---|
+| CORS `origin: '*'` | `server.ts:39` | Change to `process.env.CORS_ORIGIN` with exact domain list |
+| JWT secret fallback | `auth.service.ts:6-7` | Remove fallback strings; throw on missing env var |
+| No rate limiting | All auth routes | Add `@fastify/rate-limit` plugin |
+| Refresh tokens not rotated | `auth.service.ts:291` | Implement refresh token rotation + blocklist in Redis |
+| No input sanitization | Various | Zod schemas exist but raw SQL uses Prisma tagged templates (safe) |
+| `passwordHash` in Shop model | `auth.service.ts:155` | Already excluded from select — verify all endpoints |
+
+### 12.2 Rate Limiting
+
+Install: `npm install @fastify/rate-limit`
+
+Apply per-route limits in `server.ts`:
+```typescript
+await fastify.register(import('@fastify/rate-limit'), {
+  global: false,  // opt-in per route
+});
+
+// Auth routes: strict limits
+fastify.post('/auth/shops/login', {
+  config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  handler: AuthController.loginShop,
+});
+
+// Nearby promotions: moderate limit
+fastify.get('/promotions/nearby', {
+  config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+});
+```
+
+### 12.3 Refresh Token Rotation
+
+Current implementation in `auth.service.ts:291` generates new tokens but does not blocklist the old refresh token. Fix:
+
+```typescript
+// On refresh: store old refresh token hash in Redis with TTL = 7d
+// Mark it as "used"
+const oldTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+await redis.setex(`revoked_refresh:${oldTokenHash}`, 7 * 24 * 60 * 60, '1');
+
+// On any refresh attempt: check if token hash is in revoked set
+const hash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+const isRevoked = await redis.get(`revoked_refresh:${hash}`);
+if (isRevoked) throw new UnauthorizedError('Refresh token already used');
+```
+
+### 12.4 Redemption Security
+
+The `POST /promotions/:id/redeem` endpoint must:
+1. Verify the user's last known location is within the promotion radius (check `UserLocation` table)
+2. Or accept the user's current location in the request body and verify server-side
+3. Rate-limit: max 5 redemption attempts per user per hour
+
+### 12.5 HTTPS / TLS
+
+All production traffic must be TLS-encrypted:
+- API: Caddy or Nginx with Let's Encrypt auto-renew
+- Dashboard: handled by Vercel/Netlify
+- Mobile app: enforced by App Transport Security (iOS) and Network Security Config (Android)
+
+---
+
+## 13. Infrastructure & Deployment
+
+### 13.1 Environments
+
+| Environment | Purpose | Branch |
+|---|---|---|
+| Local | Development | any |
+| Staging | QA + testing | `develop` |
+| Production | Live users | `main` |
+
+### 13.2 Recommended Cloud Architecture
+
+**Minimum viable production setup (cost-effective for launch):**
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                    Railway.app (or Fly.io)                  │
+│                                                            │
+│  ┌─────────────────┐    ┌─────────────────────────────┐   │
+│  │  Fastify API    │    │  PostgreSQL + PostGIS        │   │
+│  │  Node 20        │    │  (Railway managed)           │   │
+│  │  1GB RAM        │    │  1GB RAM, 10GB storage       │   │
+│  └─────────────────┘    └─────────────────────────────┘   │
+│  ┌─────────────────┐    ┌─────────────────────────────┐   │
+│  │  BullMQ Workers │    │  Redis                      │   │
+│  │  (same process  │    │  (Railway managed)           │   │
+│  │   or separate)  │    │  256MB                       │   │
+│  └─────────────────┘    └─────────────────────────────┘   │
+└────────────────────────────────────────────────────────────┘
+
+┌─────────────────┐   ┌─────────────────────┐
+│  Vercel         │   │  Cloudflare R2      │
+│  Shop Dashboard │   │  Asset storage      │
+│  (static)       │   │  (logos, images)    │
+└─────────────────┘   └─────────────────────┘
+
+┌─────────────────────────────────────────────┐
+│  Expo Application Services (EAS)           │
+│  Mobile app builds + OTA updates           │
+│  eas build --platform all                  │
+└─────────────────────────────────────────────┘
+```
+
+### 13.3 Backend Dockerfile
+
+Create `packages/backend/Dockerfile`:
+
+```dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+COPY packages/backend/package*.json ./packages/backend/
+COPY packages/shared/package*.json ./packages/shared/
+RUN npm ci --workspace=packages/backend --workspace=packages/shared
+COPY packages/shared ./packages/shared
+COPY packages/backend ./packages/backend
+RUN npm run build --workspace=packages/backend
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/packages/backend/dist ./dist
+COPY --from=builder /app/packages/backend/prisma ./prisma
+COPY --from=builder /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+### 13.4 Production Environment Variables
+
+Create `packages/backend/.env.production` (never commit — inject via platform secrets):
+
+```env
+# Database
+DATABASE_URL=postgresql://user:pass@host:5432/loco_prod?schema=public&sslmode=require
+
+# Redis
+REDIS_URL=redis://:password@host:6379
+
+# Auth
+JWT_SECRET=<64 random bytes hex>
+JWT_REFRESH_SECRET=<64 random bytes hex>
+
+# CORS
+CORS_ORIGIN=https://dashboard.loco.app
+
+# Google Maps (geocoding)
+GOOGLE_MAPS_API_KEY=<key>
+
+# Cloudflare R2
+R2_ACCOUNT_ID=<id>
+R2_ACCESS_KEY_ID=<key>
+R2_SECRET_ACCESS_KEY=<secret>
+R2_BUCKET_NAME=loco-assets-prod
+R2_PUBLIC_URL=https://assets.loco.app
+
+# App
+NODE_ENV=production
+PORT=3000
+LOG_LEVEL=info
+```
+
+Create `packages/customer-app/.env.production`:
+```env
+API_URL=https://api.loco.app/api/v1
+EAS_PROJECT_ID=<real-project-id-from-eas-init>
+```
+
+Create `packages/shop-dashboard/.env.production`:
+```env
+VITE_API_URL=https://api.loco.app/api/v1
+```
+
+### 13.5 EAS Build Configuration
+
+Create `packages/customer-app/eas.json`:
+```json
+{
+  "cli": { "version": ">= 10.0.0" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "API_URL": "http://localhost:3000/api/v1" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": { "API_URL": "https://staging-api.loco.app/api/v1" }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": { "API_URL": "https://api.loco.app/api/v1" }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "your@apple.id",
+        "ascAppId": "<app-store-connect-app-id>",
+        "appleTeamId": "<team-id>"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "production"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 14. CI/CD Pipeline
+
+### 14.1 GitHub Actions Workflows
+
+Create `.github/workflows/` directory with:
+
+#### `.github/workflows/ci.yml` — runs on every PR
 ```yaml
-# .github/workflows/deploy.yml
-name: Deploy
-
+name: CI
 on:
-  push:
-    branches: [main]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
+  lint-and-type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:15-3.3
+        env:
+          POSTGRES_DB: loco_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '20'
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - run: npm test
-      - run: npm run lint
+      - run: npm run db:migrate:test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/loco_test
+      - run: npm run test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/loco_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret
+          JWT_REFRESH_SECRET: test-refresh-secret
+```
 
-  deploy-backend:
-    needs: test
+#### `.github/workflows/deploy-staging.yml` — runs on push to `develop`
+```yaml
+name: Deploy Staging
+on:
+  push:
+    branches: [develop]
+jobs:
+  deploy-api:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Deploy to Railway
-        run: |
-          npm install -g @railway/cli
-          railway up --service backend
+      - uses: actions/checkout@v4
+      - uses: railwayapp/railway-github-action@v1  # or flyctl
+        with:
+          service: loco-api-staging
+          token: ${{ secrets.RAILWAY_TOKEN }}
 
-  deploy-frontend:
-    needs: test
+  deploy-dashboard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
+      - uses: actions/checkout@v4
+      - run: npm ci && npm run build --workspace=packages/shop-dashboard
+      - uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
 ```
 
----
+#### `.github/workflows/deploy-production.yml` — runs on push to `main`
+```yaml
+name: Deploy Production
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy-api:
+    # Same as staging but targets production service
+  deploy-dashboard:
+    # Same as staging but with --prod flag on Vercel
+  build-mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: eas build --platform all --non-interactive --profile production
+        working-directory: packages/customer-app
+```
 
-## 13. COST ESTIMATION
+### 14.2 Database Migration Strategy
 
-### Monthly Costs (Estimated for 10K active users)
+Never run `prisma migrate deploy` automatically without a review gate. Strategy:
 
-| Service | Provider | Cost |
-|---------|----------|------|
-| Database (PostgreSQL) | Railway/Supabase | $15-25 |
-| Redis Cache | Upstash | $10-20 |
-| Backend Hosting | Railway/Render | $20-50 |
-| Frontend Hosting | Vercel | $0-20 |
-| Object Storage (S3) | AWS/Cloudflare R2 | $5-15 |
-| Push Notifications (FCM) | Firebase | Free-$10 |
-| Email Service | Resend/SendGrid | $10-20 |
-| Monitoring (Sentry) | Sentry | $0-26 |
-| Maps API | Mapbox | $0-50 |
-| **Total** | | **$70-236/month** |
-
-### Scaling Costs (100K users)
-
-- Database: $50-100
-- Redis: $30-60
-- Backend: $100-200
-- Storage: $20-50
-- Notifications: $20-100
-- **Total: $250-600/month**
-
----
-
-## 14. IMPLEMENTATION PHASES
-
-### Phase 1: MVP (4-6 weeks)
-
-**Backend**
-- [ ] Project setup (Node.js + TypeScript + Fastify)
-- [ ] Database schema + migrations (PostgreSQL + PostGIS)
-- [ ] Authentication (JWT for shops and users)
-- [ ] Core API endpoints
-  - [ ] Shop registration/login
-  - [ ] Location management
-  - [ ] Promotion CRUD
-  - [ ] User registration/login
-  - [ ] Nearby promotions query
-- [ ] Basic geospatial queries
-
-**Shop Dashboard**
-- [ ] Project setup (React + TypeScript + Vite)
-- [ ] Authentication pages
-- [ ] Shop profile management
-- [ ] Location management (with map picker)
-- [ ] Promotion creation form
-  - [ ] Basic fields (title, description, dates)
-  - [ ] Location targeting
-  - [ ] Radius selection
-- [ ] Active promotions list
-
-**Customer App**
-- [ ] Project setup (React PWA)
-- [ ] Authentication
-- [ ] Location permission flow
-- [ ] Nearby promotions list
-- [ ] Promotion detail view
-- [ ] Basic user preferences
-
-**DevOps**
-- [ ] Docker setup
-- [ ] Development environment
-- [ ] Deployment to staging
-
-### Phase 2: Core Features (3-4 weeks)
-
-**Backend**
-- [ ] Redis caching layer
-- [ ] Push notification service (FCM)
-- [ ] Promotion analytics
-- [ ] Redemption system
-- [ ] User location tracking
-- [ ] BullMQ job queue
-
-**Shop Dashboard**
-- [ ] Analytics dashboard
-  - [ ] Views/redemptions charts
-  - [ ] Geographic distribution
-  - [ ] Performance metrics
-- [ ] Redemption verification
-- [ ] Promotion templates
-- [ ] Image upload (S3)
-
-**Customer App**
-- [ ] Push notifications
-- [ ] Service worker + PWA manifest
-- [ ] Notification preferences
-- [ ] Shop blocking/muting
-- [ ] Promotion redemption flow
-- [ ] Favorites/saved promotions
-
-### Phase 3: Enhanced Features (3-4 weeks)
-
-**Backend**
-- [ ] Advanced analytics
-- [ ] Email notifications
-- [ ] A/B testing framework
-- [ ] Fraud detection
-- [ ] API rate limiting
-- [ ] Webhook system
-
-**Shop Dashboard**
-- [ ] Multi-user accounts (team management)
-- [ ] Advanced scheduling
-- [ ] Promotion templates
-- [ ] Export analytics
-- [ ] Notification history
-
-**Customer App**
-- [ ] Map view of promotions
-- [ ] Category filtering
-- [ ] Search functionality
-- [ ] Social sharing
-- [ ] Promotion reminders
-- [ ] Wallet/saved offers
-
-### Phase 4: Polish & Scale (2-3 weeks)
-
-- [ ] Performance optimization
-- [ ] Load testing
-- [ ] Security audit
-- [ ] E2E testing
-- [ ] Documentation
-- [ ] Beta testing
-- [ ] Production deployment
-- [ ] Monitoring setup
+```
+1. Developer runs: npx prisma migrate dev --name <description>   (local)
+2. Migration SQL reviewed in PR
+3. On merge to main: manual trigger or post-deploy hook runs:
+   npx prisma migrate deploy   (production)
+```
 
 ---
 
-## 15. RISKS & MITIGATIONS
+## 15. Testing Architecture
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| **Battery drain from location tracking** | High | Adaptive intervals, battery-aware logic |
-| **Privacy concerns** | High | Transparent policies, user controls, minimal data |
-| **Notification fatigue** | Medium | Smart throttling, user preferences, ML filtering |
-| **Location accuracy** | Medium | Use high-accuracy mode, validation, fallbacks |
-| **Scale issues** | Medium | Redis caching, DB optimization, CDN |
-| **Abuse/spam** | Medium | Rate limiting, moderation, reporting |
-| **Competition** | Low | Focus on UX, local merchants, fair pricing |
+**Current state: zero test files exist.** The following test strategy covers all layers.
 
----
+### 15.1 Backend Tests
 
-## 16. SUCCESS METRICS
+Install: `npm install --save-dev vitest @vitest/coverage-v8 supertest`
 
-### User Metrics
-- Daily Active Users (DAU)
-- Weekly Active Users (WAU)
-- User retention (D1, D7, D30)
-- Avg. session duration
-- Location permission grant rate
-- Notification opt-in rate
+Structure:
+```
+packages/backend/
+└── src/
+    └── __tests__/
+        ├── auth.test.ts              # register, login, refresh, logout
+        ├── promotions.test.ts        # CRUD + nearby query
+        ├── redemptions.test.ts       # generate code, verify, limits
+        ├── locations.test.ts         # CRUD + geocoding
+        ├── notifications.test.ts     # push token store, send
+        ├── analytics.test.ts         # overview, per-promo
+        └── geofence.worker.test.ts   # mock PostGIS, verify match logic
+```
 
-### Business Metrics
-- Number of active shops
-- Promotions created per shop
-- Avg. redemption rate
-- User-to-shop engagement ratio
-- Revenue per shop
-- Customer acquisition cost
+Each test file uses a test database (separate schema or transaction rollback):
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+export default defineConfig({
+  test: {
+    globalSetup: './src/__tests__/setup.ts',  // migrate test DB
+    hookTimeout: 30000,
+  }
+});
+```
 
-### Technical Metrics
-- API response time (p50, p95, p99)
-- Database query performance
-- Push notification delivery rate
-- App crash rate
-- PWA install rate
-- Offline usage rate
+### 15.2 Customer App Tests
 
----
+Install: `npm install --save-dev jest @testing-library/react-native`
 
-## 17. FUTURE ENHANCEMENTS
+```
+packages/customer-app/
+└── src/
+    └── __tests__/
+        ├── stores/
+        │   ├── authStore.test.ts
+        │   └── locationStore.test.ts
+        ├── services/
+        │   ├── location.test.ts
+        │   └── notifications.test.ts
+        └── components/
+            ├── PromotionCard.test.tsx
+            └── RedemptionScreen.test.tsx
+```
 
-### Phase 5+ Ideas
+### 15.3 E2E Tests
 
-1. **Machine Learning**
-   - Personalized promotion recommendations
-   - Optimal notification timing
-   - Fraud detection
-   - Demand prediction
+Use Detox (mobile) or Playwright (dashboard web):
 
-2. **Advanced Features**
-   - Loyalty programs
-   - Referral system
-   - In-app payments
-   - QR code redemption
-   - Augmented reality promotions
-
-3. **Platform Expansion**
-   - Native iOS/Android apps
-   - Merchant POS integration
-   - API for third-party apps
-   - Widget for shop websites
-
-4. **Analytics**
-   - Foot traffic attribution
-   - ROI calculator
-   - Competitive insights
-   - Heatmap visualizations
-
-5. **Integrations**
-   - Social media (share deals)
-   - Calendar (reminder integration)
-   - Apple Wallet / Google Pay
-   - CRM systems (Salesforce, HubSpot)
+**Priority E2E flows:**
+1. Shop: register → add location → create promotion → activate
+2. Customer: register → grant location → see nearby promotion → redeem
+3. Shop: verify redemption code → success
+4. Geofence: user enters radius → push notification received
 
 ---
 
-## CONCLUSION
+## 16. Environment Configuration
 
-This architecture provides a solid foundation for a scalable, modern location-based promotions platform. The tech stack prioritizes:
+### 16.1 All Environment Variables — Complete Reference
 
-- **Developer Experience**: TypeScript, modern frameworks, excellent tooling
-- **Performance**: Redis caching, optimized queries, CDN delivery
-- **Scalability**: Horizontal scaling, queue-based processing, microservices-ready
-- **User Privacy**: Transparent tracking, user controls, minimal data retention
-- **Mobile-First**: PWA for cross-platform reach, native-like experience
+#### `packages/backend/.env`
+```env
+# Server
+NODE_ENV=development
+PORT=3000
+LOG_LEVEL=info
 
-The platform is designed to start simple (MVP) and scale to millions of users with the right architectural decisions in place from day one.
+# Database
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/loco_dev
 
-**Recommended Next Steps:**
-1. Review and approve architecture
-2. Set up development environment
-3. Initialize projects (backend, shop-dashboard, customer-app)
-4. Create detailed sprint plans
-5. Begin Phase 1 implementation
+# Redis
+REDIS_URL=redis://localhost:6379
 
+# Auth
+JWT_SECRET=                          # REQUIRED — min 32 chars
+JWT_REFRESH_SECRET=                  # REQUIRED — min 32 chars
+
+# Geocoding
+GOOGLE_MAPS_API_KEY=                 # Optional — fallback uses mock coords
+
+# CORS
+CORS_ORIGIN=http://localhost:5173    # Dashboard dev URL
+
+# File Storage
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=loco-assets-dev
+R2_PUBLIC_URL=http://localhost:3000/assets   # local mock
+
+# Workers
+GEOFENCE_INTERVAL_MS=300000          # 5 minutes
+NOTIFICATION_COOLDOWN_HOURS=4        # Don't re-notify for 4 hours
+```
+
+#### `packages/customer-app/.env`
+```env
+API_URL=http://localhost:3000/api/v1
+EAS_PROJECT_ID=                      # From: eas init
+```
+
+#### `packages/shop-dashboard/.env`
+```env
+VITE_API_URL=http://localhost:3000/api/v1
+```
+
+---
+
+## 17. Implementation Roadmap
+
+Based on the current state (Sprint 3 complete), here is the prioritized build order for production.
+
+### Phase 1: Core Completion (Weeks 1–2) — Unblock the app
+
+**Goal**: Every button in the app does something real.
+
+| Task | File(s) | Priority |
+|---|---|---|
+| Backend: Redemption module | `src/modules/redemptions/` | P0 |
+| Backend: `POST /promotions/:id/redeem` | `promotions.routes.ts` | P0 |
+| Backend: `POST /shops/redemptions/verify` | `redemptions.routes.ts` | P0 |
+| Backend: `POST /users/push-token` | `users.routes.ts` | P0 |
+| Mobile: Redemption screen | `app/redemption/[id].tsx` | P0 |
+| Mobile: Wire up "Redeem" button in `promotion/[id].tsx:288` | `app/promotion/[id].tsx` | P0 |
+| Mobile: Redemption history tab | `app/(tabs)/redeemed.tsx` | P1 |
+| Dashboard: Redemption verify page | `src/pages/RedemptionVerifyPage.tsx` | P0 |
+| Add QR scanner library | `packages/shop-dashboard/package.json` | P0 |
+| Add qrcode package to backend | `packages/backend/package.json` | P0 |
+
+### Phase 2: Notifications (Weeks 3–4) — Core differentiator
+
+| Task | File(s) | Priority |
+|---|---|---|
+| Backend: BullMQ integration | `src/workers/`, `src/index.ts` | P0 |
+| Backend: Geofence worker | `src/workers/geofence.worker.ts` | P0 |
+| Backend: Notification worker | `src/workers/notification.worker.ts` | P0 |
+| Backend: Expo Push service | `src/shared/services/expo-push.service.ts` | P0 |
+| Backend: Promotion lifecycle cron | `src/workers/promotion-lifecycle.worker.ts` | P1 |
+| Mobile: Call `requestNotificationPermissions()` on login | `app/_layout.tsx` | P0 |
+| Mobile: Handle notification tap → navigate to promotion | `app/_layout.tsx` | P0 |
+| EAS: Create real project (`eas init`) | `packages/customer-app/` | P0 |
+| app.json: Replace API key placeholders | `app.json` | P0 |
+
+### Phase 3: Analytics & Dashboard Polish (Week 5)
+
+| Task | File(s) | Priority |
+|---|---|---|
+| Backend: Analytics overview endpoint | `src/modules/analytics/` | P0 |
+| Backend: Per-promotion analytics | `src/modules/analytics/` | P1 |
+| Dashboard: Live metrics on DashboardPage | `src/pages/DashboardPage.tsx` | P0 |
+| Dashboard: Analytics page with charts | `src/pages/AnalyticsPage.tsx` | P1 |
+| Dashboard: Add Recharts | `packages/shop-dashboard/package.json` | P1 |
+| Backend: Redis caching for nearby query | `promotions.service.ts` | P1 |
+
+### Phase 4: File Uploads & Discovery (Week 6)
+
+| Task | File(s) | Priority |
+|---|---|---|
+| Backend: File upload module (R2) | `src/modules/files/` | P1 |
+| Backend: Discovery feed endpoint | `src/modules/discovery/` | P1 |
+| Backend: Exposure tracking | `src/modules/discovery/` | P1 |
+| Mobile: Favorites tab complete | `app/(tabs)/favorites.tsx` | P1 |
+| Mobile: Profile/settings complete | `app/(tabs)/profile.tsx` | P1 |
+| Schema: Add `lastLoginAt` + `status` to Shop | `schema.prisma` | P0 |
+| Schema: Add `PushToken` model | `schema.prisma` | P0 |
+| Schema: Add `UserFavoritePromotion` model | `schema.prisma` | P1 |
+
+### Phase 5: Security, Testing & Infra (Weeks 7–8)
+
+| Task | Priority |
+|---|---|
+| Fix CORS from `*` to real domain | P0 |
+| Remove JWT secret fallback strings | P0 |
+| Add `@fastify/rate-limit` to auth routes | P0 |
+| Implement refresh token rotation + Redis blocklist | P0 |
+| Write backend tests (auth, promotions, redemptions) | P0 |
+| Set up GitHub Actions CI workflow | P0 |
+| Create `packages/backend/Dockerfile` | P0 |
+| Create `packages/customer-app/eas.json` | P0 |
+| Deploy backend to Railway/Fly.io staging | P0 |
+| Deploy dashboard to Vercel staging | P0 |
+
+### Phase 6: App Store Submission (Week 9)
+
+| Task | Notes |
+|---|---|
+| Create 1024×1024 app icon | Required for both stores |
+| Create splash screen (2048×2048) | iOS + Android |
+| Create screenshots (6 sizes for iOS) | App Store Connect requirement |
+| Apple Developer account enrollment | $99/year |
+| Google Play Console account | $25 one-time |
+| Privacy Policy page | Required for location + notifications |
+| Create `eas.json` with submit config | |
+| `eas build --platform all --profile production` | |
+| `eas submit --platform all` | |
+
+---
+
+## 18. API Contract Reference
+
+### 18.1 Response Envelope
+
+All API responses use this envelope (already implemented):
+```typescript
+// Success
+{ "success": true, "data": <payload> }
+
+// Error
+{ "success": false, "error": "Human-readable message", "details": [...] }
+```
+
+### 18.2 Authentication Header
+
+All authenticated requests must include:
+```
+Authorization: Bearer <accessToken>
+```
+
+### 18.3 Key Request/Response Contracts (Missing Endpoints)
+
+#### `POST /promotions/:id/redeem` (User auth)
+```typescript
+// Request: no body (user identified by JWT, location from UserLocation table)
+// Optional body:
+{ "latitude": number, "longitude": number }
+
+// 200 Response:
+{
+  "success": true,
+  "data": {
+    "code": "LOCO-K7X9P2",
+    "qrCodeBase64": "data:image/png;base64,...",
+    "expiresAt": "2026-02-25T14:30:00Z",
+    "promotion": { "id": "...", "title": "20% Off Coffee" }
+  }
+}
+
+// 400: Already redeemed max times
+// 400: Promotion expired or inactive
+// 403: User not within radius
+// 429: Rate limit exceeded
+```
+
+#### `POST /shops/redemptions/verify` (Shop auth)
+```typescript
+// Request:
+{ "code": "LOCO-K7X9P2" }
+
+// 200 Response:
+{
+  "success": true,
+  "data": {
+    "promotion": { "id": "...", "title": "20% Off Coffee" },
+    "user": { "firstName": "Alex", "lastName": "J." },  // partial name only
+    "redeemedAt": "2026-02-25T14:22:00Z",
+    "discountValue": "20% OFF"
+  }
+}
+
+// 400: Code already verified
+// 400: Code expired (older than 10 minutes)
+// 404: Code not found
+// 403: Code belongs to a different shop's promotion
+```
+
+#### `POST /users/push-token` (User auth)
+```typescript
+// Request:
+{ "token": "ExponentPushToken[xxxxxx]", "platform": "ios" | "android" }
+
+// 200 Response:
+{ "success": true, "data": { "registered": true } }
+```
+
+#### `GET /shops/analytics/overview` (Shop auth)
+```typescript
+// Query params: ?period=7d | 24h | 30d  (default: 7d)
+
+// 200 Response:
+{
+  "success": true,
+  "data": {
+    "activePromotions": 3,
+    "totalViews": { "24h": 45, "7d": 312, "30d": 1240 },
+    "totalRedemptions": { "24h": 2, "7d": 18, "30d": 89 },
+    "conversionRate7d": "5.8%",
+    "topPromotion": {
+      "id": "...",
+      "title": "Happy Hour 50% Off",
+      "views": 142,
+      "redemptions": 11
+    }
+  }
+}
+```
+
+---
+
+*This document is the single authoritative architecture reference for the LoCo platform.*
+*Update this document whenever a missing module is completed or a new architectural decision is made.*
