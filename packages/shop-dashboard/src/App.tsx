@@ -7,6 +7,8 @@ import { LocationFormPage } from './pages/LocationFormPage';
 import { PromotionsPage } from './pages/PromotionsPage';
 import { PromotionFormPage } from './pages/PromotionFormPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { RedemptionVerifyPage } from './pages/RedemptionVerifyPage';
+import { RedemptionsPage } from './pages/RedemptionsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
@@ -77,6 +79,22 @@ function App() {
           element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/verify"
+          element={
+            <ProtectedRoute>
+              <RedemptionVerifyPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/redemptions"
+          element={
+            <ProtectedRoute>
+              <RedemptionsPage />
             </ProtectedRoute>
           }
         />
