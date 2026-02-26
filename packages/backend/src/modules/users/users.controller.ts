@@ -58,4 +58,37 @@ export class UsersController {
     const result = await UsersService.unfollowShop(userId, shopId);
     return reply.send({ success: true, data: result });
   }
+
+  static registerPushToken = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id: userId } = request.user as any;
+    const { token, platform } = request.body as { token: string; platform: string };
+    const result = await UsersService.registerPushToken(userId, token, platform);
+    return reply.status(200).send({ success: true, data: result });
+  };
+
+  static getRedemptions = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id: userId } = request.user as any;
+    const result = await UsersService.getUserRedemptions(userId);
+    return reply.status(200).send({ success: true, data: result });
+  };
+
+  static getFavoritePromotions = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id: userId } = request.user as any;
+    const result = await UsersService.getFavoritePromotions(userId);
+    return reply.status(200).send({ success: true, data: result });
+  };
+
+  static addFavoritePromotion = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id: userId } = request.user as any;
+    const { promotionId } = request.params as { promotionId: string };
+    const result = await UsersService.addFavoritePromotion(userId, promotionId);
+    return reply.status(200).send({ success: true, data: result });
+  };
+
+  static removeFavoritePromotion = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id: userId } = request.user as any;
+    const { promotionId } = request.params as { promotionId: string };
+    const result = await UsersService.removeFavoritePromotion(userId, promotionId);
+    return reply.status(200).send({ success: true, data: result });
+  };
 }

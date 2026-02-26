@@ -28,6 +28,8 @@ model Shop {
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+  status       String    @default("active")
 
   locations        ShopLocation[]
   promotions       Promotion[]
@@ -93,6 +95,7 @@ model Promotion {
   redemptions        PromotionRedemption[]
   notifications      Notification[]
   discoveryExposures DiscoveryExposure[]
+  favoritedBy        UserFavoritePromotion[]
 
   @@index([shopId])
   @@index([startDate, endDate])
@@ -131,6 +134,8 @@ model User {
   notifications      Notification[]
   discoveryExposures DiscoveryExposure[]
   pushSubscriptions  PushSubscription[]
+  pushTokens         PushToken[]
+  favoritePromotions UserFavoritePromotion[]
 
   @@map("users")
 }
@@ -161,6 +166,18 @@ model UserShopPreference {
 
   @@id([userId, shopId])
   @@map("user_shop_preferences")
+}
+
+model UserFavoritePromotion {
+  userId      String   @map("user_id")
+  promotionId String   @map("promotion_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, promotionId])
+  @@map("user_favorite_promotions")
 }
 
 // ============================================================================
@@ -280,4 +297,22 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ============================================================================
+// EXPO PUSH TOKENS (mobile app)
+// ============================================================================
+
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }

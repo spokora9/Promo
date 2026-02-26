@@ -121,4 +121,66 @@ export class UsersService {
 
     return { message: 'Shop unfollowed' };
   }
+
+  static async registerPushToken(userId: string, token: string, platform: string) {
+    const pushToken = await prisma.pushToken.upsert({
+      where: { token },
+      create: { userId, token, platform },
+      update: { userId, platform },
+    });
+    return { registered: true, id: pushToken.id };
+  }
+
+  static async getUserRedemptions(userId: string) {
+    return prisma.promotionRedemption.findMany({
+      where: { userId },
+      include: {
+        promotion: {
+          select: {
+            id: true,
+            title: true,
+            discountType: true,
+            discountValue: true,
+            shop: { select: { id: true, name: true, logoUrl: true } },
+          },
+        },
+      },
+      orderBy: { redeemedAt: 'desc' },
+    });
+  }
+
+  static async getFavoritePromotions(userId: string) {
+    return prisma.userFavoritePromotion.findMany({
+      where: { userId },
+      include: {
+        promotion: {
+          select: {
+            id: true,
+            title: true,
+            discountType: true,
+            discountValue: true,
+            endDate: true,
+            status: true,
+            shop: { select: { id: true, name: true, logoUrl: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  static async addFavoritePromotion(userId: string, promotionId: string) {
+    const promotion = await prisma.promotion.findUnique({ where: { id: promotionId } });
+    if (!promotion) throw new NotFoundError('Promotion not found');
+    return prisma.userFavoritePromotion.upsert({
+      where: { userId_promotionId: { userId, promotionId } },
+      create: { userId, promotionId },
+      update: {},
+    });
+  }
+
+  static async removeFavoritePromotion(userId: string, promotionId: string) {
+    await prisma.userFavoritePromotion.deleteMany({ where: { userId, promotionId } });
+    return { removed: true };
+  }
 }

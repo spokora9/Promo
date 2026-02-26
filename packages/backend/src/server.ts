@@ -9,6 +9,10 @@ import { usersRoutes } from './modules/users/users.routes';
 import { shopsRoutes } from './modules/shops/shops.routes';
 import { prisma } from './shared/config/database';
 import { AppError } from './shared/utils/errors';
+import { redemptionsRoutes } from './modules/redemptions/redemptions.routes';
+import { notificationsRoutes } from './modules/notifications/notifications.routes';
+import { discoveryRoutes } from './modules/discovery/discovery.routes';
+import { analyticsRoutes } from './modules/analytics/analytics.routes';
 
 // Extend Fastify instance to include prisma
 declare module 'fastify' {
@@ -36,8 +40,14 @@ export async function buildServer() {
 
   // Register CORS
   await fastify.register(cors, {
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true,
     credentials: true,
+  });
+
+  // Register rate limiting
+  await fastify.register(import('@fastify/rate-limit'), {
+    global: false,
+    keyGenerator: (request) => request.ip,
   });
 
   // Add prisma to fastify instance
@@ -68,6 +78,18 @@ export async function buildServer() {
 
       // Register public shops routes
       instance.register(shopsRoutes);
+
+      // Register redemptions routes
+      instance.register(redemptionsRoutes);
+
+      // Register notifications routes
+      instance.register(notificationsRoutes);
+
+      // Register discovery routes
+      instance.register(discoveryRoutes);
+
+      // Register analytics routes
+      instance.register(analyticsRoutes);
     },
     { prefix: '/api/v1' }
   );
