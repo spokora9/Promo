@@ -300,6 +300,24 @@ model PushSubscription {
 }
 
 // ============================================================================
+// REFRESH TOKEN REVOCATION
+// ============================================================================
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  jti         String    @unique  // JWT ID claim — links to the signed JWT
+  subjectId   String    @map("subject_id")   // shop or user id
+  subjectType String    @map("subject_type") // 'shop' | 'user'
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([subjectId, subjectType])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
 // EXPO PUSH TOKENS (mobile app)
 // ============================================================================
 

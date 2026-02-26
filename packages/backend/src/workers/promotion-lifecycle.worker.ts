@@ -30,6 +30,14 @@ async function runLifecycleScan(): Promise<void> {
   if (expired.count > 0) {
     console.info(`[Lifecycle] Auto-expired ${expired.count} promotions`);
   }
+
+  // Purge expired refresh tokens older than 24 hours to keep the table clean
+  const purged = await prisma.refreshToken.deleteMany({
+    where: { expiresAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+  });
+  if (purged.count > 0) {
+    console.info(`[Lifecycle] Purged ${purged.count} expired refresh tokens`);
+  }
 }
 
 export function startLifecycleWorker(): Worker {

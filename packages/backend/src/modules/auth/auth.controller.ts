@@ -7,6 +7,7 @@ import {
   userLoginSchema,
   refreshTokenSchema,
 } from './auth.schema';
+import { BadRequestError } from '../../shared/utils/errors';
 
 export class AuthController {
   // Shop registration
@@ -64,10 +65,13 @@ export class AuthController {
     });
   }
 
-  // Logout (client-side token removal, but we can blacklist tokens in future)
+  // Logout — revokes the provided refresh token so it can't be reused
   static async logout(request: FastifyRequest, reply: FastifyReply) {
-    // For now, logout is handled client-side by removing tokens
-    // In production, you might want to implement token blacklisting with Redis
+    const body = request.body as any;
+    if (!body?.refreshToken) {
+      throw new BadRequestError('refreshToken is required to logout');
+    }
+    await AuthService.revokeRefreshToken(body.refreshToken);
     return reply.send({
       success: true,
       message: 'Logged out successfully',

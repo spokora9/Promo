@@ -1,4 +1,5 @@
 import { buildServer } from './server';
+import { startWorkers } from './workers';
 import 'dotenv/config';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -11,15 +12,22 @@ async function start() {
     await server.listen({ port: PORT, host: HOST });
 
     console.log(`
-🚀 LoCo Backend Server is running!
+LoCo Backend Server is running!
 
-  ➜ Local:   http://localhost:${PORT}
-  ➜ Network: http://${HOST}:${PORT}
-  ➜ Health:  http://localhost:${PORT}/health
-  ➜ API:     http://localhost:${PORT}/api/v1
+  Local:   http://localhost:${PORT}
+  Network: http://${HOST}:${PORT}
+  Health:  http://localhost:${PORT}/health
+  API:     http://localhost:${PORT}/api/v1
 
   Environment: ${process.env.NODE_ENV || 'development'}
     `);
+
+    // Start background workers (geofence, notifications, promotion lifecycle)
+    if (process.env.REDIS_URL) {
+      await startWorkers();
+    } else {
+      console.warn('[Workers] REDIS_URL not set — background workers disabled');
+    }
 
     // Graceful shutdown
     const signals = ['SIGINT', 'SIGTERM'];

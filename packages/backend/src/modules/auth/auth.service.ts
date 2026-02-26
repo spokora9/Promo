@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { prisma } from '../../shared/config/database';
 import { UnauthorizedError, BadRequestError } from '../../shared/utils/errors';
 
@@ -11,6 +12,7 @@ if (!JWT_SECRET || !JWT_REFRESH_SECRET) {
 }
 const ACCESS_TOKEN_EXPIRES_IN = '15m';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
+const REFRESH_TOKEN_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000;
 const SALT_ROUNDS = 10;
 
 interface TokenPayload {
@@ -36,24 +38,38 @@ export class AuthService {
     return bcrypt.compare(password, hash);
   }
 
-  // Generate access token
+  // Generate access token (no jti needed — short-lived, not stored)
   static generateAccessToken(payload: TokenPayload): string {
     return jwt.sign(payload, JWT_SECRET, {
       expiresIn: ACCESS_TOKEN_EXPIRES_IN,
     });
   }
 
-  // Generate refresh token
-  static generateRefreshToken(payload: TokenPayload): string {
-    return jwt.sign(payload, JWT_REFRESH_SECRET, {
+  // Generate refresh token with jti — store in DB for revocation support
+  static async generateAndStoreRefreshToken(payload: TokenPayload): Promise<string> {
+    const jti = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES_MS);
+
+    const token = jwt.sign({ ...payload, jti }, JWT_REFRESH_SECRET, {
       expiresIn: REFRESH_TOKEN_EXPIRES_IN,
     });
+
+    await prisma.refreshToken.create({
+      data: {
+        jti,
+        subjectId: payload.id,
+        subjectType: payload.type,
+        expiresAt,
+      },
+    });
+
+    return token;
   }
 
   // Generate both tokens
-  static generateTokens(payload: TokenPayload): AuthTokens {
+  static async generateTokens(payload: TokenPayload): Promise<AuthTokens> {
     const accessToken = this.generateAccessToken(payload);
-    const refreshToken = this.generateRefreshToken(payload);
+    const refreshToken = await this.generateAndStoreRefreshToken(payload);
 
     return {
       accessToken,
@@ -71,10 +87,10 @@ export class AuthService {
     }
   }
 
-  // Verify refresh token
-  static verifyRefreshToken(token: string): TokenPayload {
+  // Verify refresh token signature and return decoded payload + jti
+  static verifyRefreshTokenSignature(token: string): TokenPayload & { jti: string } {
     try {
-      return jwt.verify(token, JWT_REFRESH_SECRET) as TokenPayload;
+      return jwt.verify(token, JWT_REFRESH_SECRET) as TokenPayload & { jti: string };
     } catch (error) {
       throw new UnauthorizedError('Invalid or expired refresh token');
     }
@@ -119,7 +135,7 @@ export class AuthService {
     });
 
     // Generate tokens
-    const tokens = this.generateTokens({
+    const tokens = await this.generateTokens({
       id: shop.id,
       email: shop.email,
       type: 'shop',
@@ -161,7 +177,7 @@ export class AuthService {
     });
 
     // Generate tokens
-    const tokens = this.generateTokens({
+    const tokens = await this.generateTokens({
       id: shop.id,
       email: shop.email,
       type: 'shop',
@@ -230,7 +246,7 @@ export class AuthService {
     });
 
     // Generate tokens
-    const tokens = this.generateTokens({
+    const tokens = await this.generateTokens({
       id: user.id,
       email: user.email || user.phone || '',
       type: 'user',
@@ -259,7 +275,7 @@ export class AuthService {
     }
 
     // Verify password
-    const isValidPassword = await this.verifyPassword(password, user.passwordHash);
+    const isValidPassword = await this.verifyPassword(password, user.passwordHash!);
 
     if (!isValidPassword) {
       throw new UnauthorizedError('Invalid credentials');
@@ -268,11 +284,11 @@ export class AuthService {
     // Update last login
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLogin: new Date() },
     });
 
     // Generate tokens
-    const tokens = this.generateTokens({
+    const tokens = await this.generateTokens({
       id: user.id,
       email: user.email || user.phone || '',
       type: 'user',
@@ -291,37 +307,73 @@ export class AuthService {
     };
   }
 
-  // Refresh access token
+  // Refresh access token — validates DB record to support revocation
   static async refreshAccessToken(refreshToken: string) {
-    // Verify refresh token
-    const payload = this.verifyRefreshToken(refreshToken);
+    const payload = this.verifyRefreshTokenSignature(refreshToken);
 
-    // Verify user/shop still exists
+    // Check the DB record exists and hasn't been revoked
+    const stored = await prisma.refreshToken.findUnique({
+      where: { jti: payload.jti },
+    });
+
+    if (!stored) {
+      throw new UnauthorizedError('Refresh token not recognised');
+    }
+
+    if (stored.revokedAt) {
+      throw new UnauthorizedError('Refresh token has been revoked');
+    }
+
+    if (stored.expiresAt < new Date()) {
+      throw new UnauthorizedError('Refresh token has expired');
+    }
+
+    // Verify subject still exists and is active
     if (payload.type === 'shop') {
-      const shop = await prisma.shop.findUnique({
-        where: { id: payload.id },
-      });
-
+      const shop = await prisma.shop.findUnique({ where: { id: payload.id } });
       if (!shop || shop.status !== 'active') {
-        throw new UnauthorizedError('Invalid refresh token');
+        throw new UnauthorizedError('Account is not active');
       }
     } else {
-      const user = await prisma.user.findUnique({
-        where: { id: payload.id },
-      });
-
+      const user = await prisma.user.findUnique({ where: { id: payload.id } });
       if (!user) {
-        throw new UnauthorizedError('Invalid refresh token');
+        throw new UnauthorizedError('User not found');
       }
     }
 
-    // Generate new tokens
-    const tokens = this.generateTokens({
+    // Rotate: revoke old token, issue new pair
+    await prisma.refreshToken.update({
+      where: { jti: payload.jti },
+      data: { revokedAt: new Date() },
+    });
+
+    const tokens = await this.generateTokens({
       id: payload.id,
       email: payload.email,
       type: payload.type,
     });
 
     return tokens;
+  }
+
+  // Revoke a specific refresh token (logout)
+  static async revokeRefreshToken(refreshToken: string) {
+    try {
+      const payload = this.verifyRefreshTokenSignature(refreshToken);
+      await prisma.refreshToken.updateMany({
+        where: { jti: payload.jti, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    } catch {
+      // If token is already invalid/expired, silently succeed — logout should always work
+    }
+  }
+
+  // Revoke all refresh tokens for a subject (force logout everywhere)
+  static async revokeAllTokens(subjectId: string, subjectType: 'shop' | 'user') {
+    await prisma.refreshToken.updateMany({
+      where: { subjectId, subjectType, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
   }
 }

@@ -44,8 +44,17 @@ export async function promotionsRoutes(fastify: FastifyInstance) {
     handler: PromotionsController.getPromotionStats,
   });
 
-  // Public/customer routes
-  fastify.get('/promotions/nearby', PromotionsController.getNearbyPromotions);
-  fastify.get('/promotions/:id', PromotionsController.getPublicPromotion);
-  fastify.post('/promotions/:id/view', PromotionsController.trackView);
+  // Public/customer routes — rate limited to prevent scraping
+  fastify.get('/promotions/nearby', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    handler: PromotionsController.getNearbyPromotions,
+  });
+  fastify.get('/promotions/:id', {
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    handler: PromotionsController.getPublicPromotion,
+  });
+  fastify.post('/promotions/:id/view', {
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+    handler: PromotionsController.trackView,
+  });
 }
