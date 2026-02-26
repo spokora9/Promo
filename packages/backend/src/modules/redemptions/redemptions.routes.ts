@@ -9,6 +9,12 @@ export async function redemptionsRoutes(fastify: FastifyInstance) {
     handler: RedemptionsController.redeemPromotion,
   });
 
+  // Customer: get own redemption history
+  fastify.get('/users/redemptions', {
+    preHandler: [authenticateUser],
+    handler: RedemptionsController.getUserRedemptions,
+  });
+
   // Shop: verify a redemption code
   fastify.post('/shops/redemptions/verify', {
     preHandler: [authenticateShop],

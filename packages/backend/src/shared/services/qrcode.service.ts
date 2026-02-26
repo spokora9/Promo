@@ -1,14 +1,11 @@
 import QRCode from 'qrcode';
 
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://dashboard.loco.app';
-
 export class QRCodeService {
-  static async generateRedemptionQR(code: string): Promise<string> {
-    const url = `${DASHBOARD_URL}/verify?code=${code}`;
-    return QRCode.toDataURL(url, {
+  static async generateBase64(text: string): Promise<string> {
+    return QRCode.toDataURL(text, {
       width: 300,
       margin: 2,
-      color: { dark: '#1f2937', light: '#ffffff' },
+      color: { dark: '#000000', light: '#FFFFFF' },
     });
   }
 }
