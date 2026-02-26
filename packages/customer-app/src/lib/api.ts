@@ -147,4 +147,54 @@ export const registerPushToken = async (token: string) => {
   return api.post('/users/push-token', { token });
 };
 
+// Redemptions
+export const redeemPromotion = async (
+  promotionId: string,
+  location?: { latitude: number; longitude: number }
+) => {
+  return api.post<{
+    success: boolean;
+    data: {
+      redemptionId: string;
+      code: string;
+      qrCodeBase64: string;
+      expiresAt: string;
+      promotion: { id: string; title: string; discountType?: string; discountValue?: number; shopName: string };
+    };
+  }>(`/promotions/${promotionId}/redeem`, location ? location : {});
+};
+
+export const getUserRedemptions = async () => {
+  return api.get<{
+    success: boolean;
+    data: Array<{
+      id: string;
+      code: string;
+      redeemedAt: string;
+      isVerified: boolean;
+      promotion: {
+        id: string;
+        title: string;
+        discountType?: string;
+        discountValue?: number;
+        shop: { id: string; name: string; logoUrl?: string };
+      };
+    }>;
+  }>('/users/redemptions');
+};
+
+export const getNotifications = async () => {
+  return api.get<{
+    success: boolean;
+    data: {
+      notifications: any[];
+      unreadCount: number;
+    };
+  }>('/notifications');
+};
+
+export const markNotificationRead = async (notificationId: string) => {
+  return api.put(`/notifications/${notificationId}/read`, {});
+};
+
 export default api;

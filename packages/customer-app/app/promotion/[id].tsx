@@ -285,9 +285,7 @@ export default function PromotionDetailScreen() {
         {!isExpired && (
           <TouchableOpacity
             style={styles.redeemBtn}
-            onPress={() =>
-              Alert.alert('Coming Soon', 'Redemption flow will be available in the next update!')
-            }
+            onPress={() => router.push(`/redemption/${promotion.id}` as any)}
           >
             <Ionicons name="gift-outline" size={20} color="#fff" />
             <Text style={styles.redeemBtnText}>Redeem This Offer</Text>
