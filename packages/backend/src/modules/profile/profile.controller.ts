@@ -1,6 +1,21 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import { ProfileService } from './profile.service';
 import { updateShopProfileSchema, updateUserProfileSchema } from './profile.schema';
+
+const updateLogoSchema = z.object({
+  logoUrl: z.string().url().max(2048).refine(
+    (url) => url.startsWith('https://'),
+    { message: 'Logo URL must use HTTPS' }
+  ),
+});
+
+const updateAvatarSchema = z.object({
+  avatarUrl: z.string().url().max(2048).refine(
+    (url) => url.startsWith('https://'),
+    { message: 'Avatar URL must use HTTPS' }
+  ),
+});
 
 export class ProfileController {
   // Get shop profile
@@ -54,14 +69,7 @@ export class ProfileController {
   // Update shop logo
   static async updateShopLogo(request: FastifyRequest, reply: FastifyReply) {
     const shopId = (request as any).user.id;
-    const { logoUrl } = request.body as { logoUrl: string };
-
-    if (!logoUrl) {
-      return reply.code(400).send({
-        success: false,
-        error: 'Logo URL is required',
-      });
-    }
+    const { logoUrl } = updateLogoSchema.parse(request.body);
 
     const shop = await ProfileService.updateShopLogo(shopId, logoUrl);
 
@@ -74,14 +82,7 @@ export class ProfileController {
   // Update user avatar
   static async updateUserAvatar(request: FastifyRequest, reply: FastifyReply) {
     const userId = (request as any).user.id;
-    const { avatarUrl } = request.body as { avatarUrl: string };
-
-    if (!avatarUrl) {
-      return reply.code(400).send({
-        success: false,
-        error: 'Avatar URL is required',
-      });
-    }
+    const { avatarUrl } = updateAvatarSchema.parse(request.body);
 
     const user = await ProfileService.updateUserAvatar(userId, avatarUrl);
 

@@ -2,9 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { AuthController } from './auth.controller';
 import { authenticate, authenticateShop, authenticateUser } from '../../shared/middleware/auth.middleware';
 
-// Strict rate limit for credential endpoints: 10 attempts per minute per IP
+// Strict rate limit for credential endpoints: 5 attempts per minute per IP
 const credentialRateLimit = {
-  max: 10,
+  max: 5,
   timeWindow: '1 minute',
   errorResponseBuilder: () => ({
     success: false,
@@ -12,9 +12,9 @@ const credentialRateLimit = {
   }),
 };
 
-// Loose rate limit for registration: 5 accounts per hour per IP
+// Loose rate limit for registration: 3 accounts per hour per IP
 const registrationRateLimit = {
-  max: 5,
+  max: 3,
   timeWindow: '1 hour',
   errorResponseBuilder: () => ({
     success: false,

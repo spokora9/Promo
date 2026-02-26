@@ -146,6 +146,7 @@ export class UsersService {
         },
       },
       orderBy: { redeemedAt: 'desc' },
+      take: 200,
     });
   }
 
@@ -166,6 +167,7 @@ export class UsersService {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 200,
     });
   }
 

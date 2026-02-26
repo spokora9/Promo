@@ -1,4 +1,5 @@
 import { prisma } from '../../shared/config/database';
+import { Prisma } from '@prisma/client';
 
 export class DiscoveryService {
 
@@ -20,6 +21,11 @@ export class DiscoveryService {
       select: { shopId: true },
     });
     const followedIds = followedShopIds.map((p) => p.shopId);
+
+    // Build the NOT IN clause safely using Prisma.join (parameterized)
+    const excludeClause = followedIds.length > 0
+      ? Prisma.sql`AND s.id NOT IN (${Prisma.join(followedIds)})`
+      : Prisma.empty;
 
     // Find shops with discovery offers nearby that user doesn't follow
     const shops = await prisma.$queryRaw<any[]>`
@@ -44,7 +50,7 @@ export class DiscoveryService {
         AND p.end_date >= ${now}
       WHERE
         s.is_active = true
-        AND s.id NOT IN (${followedIds.length > 0 ? followedIds.join(',') : 'null'})
+        ${excludeClause}
         AND ST_DWithin(
           ST_MakePoint(${longitude}, ${latitude})::geography,
           ST_MakePoint(sl.longitude, sl.latitude)::geography,

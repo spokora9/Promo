@@ -9,13 +9,18 @@ const updateLocationSchema = z.object({
 });
 
 const updateProfileSchema = z.object({
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
+  firstName: z.string().min(1).max(50).optional(),
+  lastName: z.string().min(1).max(50).optional(),
   pushNotificationsEnabled: z.boolean().optional(),
   notificationRadiusMeters: z.number().min(500).max(50000).optional(),
   locationSharingEnabled: z.boolean().optional(),
   discoveryModeEnabled: z.boolean().optional(),
   discoveryModeType: z.enum(['off', 'active', 'silent', 'smart']).optional(),
+});
+
+const pushTokenSchema = z.object({
+  token: z.string().min(20, 'Push token too short').max(1000),
+  platform: z.enum(['ios', 'android']),
 });
 
 export class UsersController {
@@ -61,7 +66,7 @@ export class UsersController {
 
   static registerPushToken = async (request: FastifyRequest, reply: FastifyReply) => {
     const { id: userId } = request.user as any;
-    const { token, platform } = request.body as { token: string; platform: string };
+    const { token, platform } = pushTokenSchema.parse(request.body);
     const result = await UsersService.registerPushToken(userId, token, platform);
     return reply.status(200).send({ success: true, data: result });
   };

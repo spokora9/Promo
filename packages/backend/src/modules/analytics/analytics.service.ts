@@ -1,5 +1,6 @@
 import { prisma } from '../../shared/config/database';
 import { redis, CACHE_TTL } from '../../shared/config/redis';
+import { NotFoundError } from '../../shared/utils/errors';
 
 type Period = '24h' | '7d' | '30d';
 
@@ -110,7 +111,7 @@ export class AnalyticsService {
     });
 
     if (!promotion || promotion.shopId !== shopId) {
-      throw new Error('Promotion not found');
+      throw new NotFoundError('Promotion not found');
     }
 
     const [totalViews, totalRedemptions, uniqueViewers] = await Promise.all([

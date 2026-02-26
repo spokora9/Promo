@@ -35,6 +35,9 @@ export async function locationsRoutes(fastify: FastifyInstance) {
     handler: LocationsController.geocodeAddress,
   });
 
-  // Public/customer routes
-  fastify.get('/locations/nearby', LocationsController.getNearbyLocations);
+  // Public/customer routes — rate limited
+  fastify.get('/locations/nearby', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    handler: LocationsController.getNearbyLocations,
+  });
 }

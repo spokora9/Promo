@@ -38,9 +38,14 @@ export async function buildServer() {
     },
   });
 
-  // Register CORS
+  // Register CORS — restrictive in production, permissive in dev
+  const corsOrigin = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : process.env.NODE_ENV === 'production'
+      ? [] // Block all cross-origin in production if CORS_ORIGIN not set
+      : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173'];
   await fastify.register(cors, {
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true,
+    origin: corsOrigin,
     credentials: true,
   });
 

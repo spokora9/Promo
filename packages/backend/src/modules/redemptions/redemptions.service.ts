@@ -8,11 +8,11 @@ const DASHBOARD_BASE_URL = process.env.DASHBOARD_URL || 'https://dashboard.loco.
 
 export class RedemptionsService {
 
-  // Generate a unique redemption code in format LOCO-XXXXXX
+  // Generate a unique redemption code in format LOCO-XXXXXXXXXX (10 chars = ~52 bits entropy)
   private static generateCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
-    const bytes = crypto.randomBytes(6);
+    const bytes = crypto.randomBytes(10);
     for (const byte of bytes) {
       code += chars[byte % chars.length];
     }
@@ -35,23 +35,6 @@ export class RedemptionsService {
     if (promotion.startDate > now) throw new BadRequestError('Promotion has not started yet');
     if (promotion.endDate < now) throw new BadRequestError('Promotion has expired');
 
-    // Check max total redemptions
-    if (promotion.maxTotalRedemptions !== null) {
-      if (promotion.currentRedemptions >= promotion.maxTotalRedemptions) {
-        throw new BadRequestError('This promotion has reached its maximum redemptions');
-      }
-    }
-
-    // Check per-user redemption limit
-    if (promotion.maxRedemptionsPerUser !== null) {
-      const userRedemptionCount = await prisma.promotionRedemption.count({
-        where: { promotionId, userId },
-      });
-      if (userRedemptionCount >= (promotion.maxRedemptionsPerUser ?? 1)) {
-        throw new BadRequestError('You have already redeemed this promotion the maximum number of times');
-      }
-    }
-
     // If coordinates provided, verify user is within radius
     if (latitude !== undefined && longitude !== undefined) {
       const locations = await prisma.shopLocation.findMany({
@@ -64,11 +47,11 @@ export class RedemptionsService {
 
       const withinRadius = locations.some((loc) => {
         const R = 6371000;
-        const φ1 = (latitude * Math.PI) / 180;
-        const φ2 = (loc.latitude * Math.PI) / 180;
-        const Δφ = ((loc.latitude - latitude) * Math.PI) / 180;
-        const Δλ = ((loc.longitude - longitude) * Math.PI) / 180;
-        const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+        const phi1 = (latitude * Math.PI) / 180;
+        const phi2 = (loc.latitude * Math.PI) / 180;
+        const dPhi = ((loc.latitude - latitude) * Math.PI) / 180;
+        const dLambda = ((loc.longitude - longitude) * Math.PI) / 180;
+        const a = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
         const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return distance <= promotion.radiusMeters;
       });
@@ -78,7 +61,7 @@ export class RedemptionsService {
       }
     }
 
-    // Generate unique code (retry on collision)
+    // Generate unique code outside transaction (crypto is safe to retry)
     let code: string;
     let attempts = 0;
     do {
@@ -87,17 +70,40 @@ export class RedemptionsService {
       if (attempts > 10) throw new BadRequestError('Failed to generate unique code, please try again');
     } while (await prisma.promotionRedemption.findUnique({ where: { redemptionCode: code } }));
 
-    const expiresAt = new Date(now.getTime() + REDEMPTION_EXPIRY_MINUTES * 60 * 1000);
+    // Serializable transaction: re-check limits atomically + create record
+    // Prevents race condition where concurrent requests both pass the limit check
+    const redemption = await prisma.$transaction(async (tx) => {
+      // Re-read promotion inside transaction for accurate count
+      const current = await tx.promotion.findUnique({ where: { id: promotionId } });
+      if (!current) throw new NotFoundError('Promotion not found');
 
-    // Create redemption record
-    const redemption = await prisma.promotionRedemption.create({
-      data: {
-        promotionId,
-        userId,
-        redemptionCode: code,
-        isVerified: false,
-      },
-    });
+      // Atomic max total redemptions check (count actual records, not just counter)
+      if (current.maxTotalRedemptions !== null) {
+        const totalCount = await tx.promotionRedemption.count({ where: { promotionId } });
+        if (totalCount >= current.maxTotalRedemptions) {
+          throw new BadRequestError('This promotion has reached its maximum redemptions');
+        }
+      }
+
+      // Atomic per-user limit check
+      if (current.maxRedemptionsPerUser !== null) {
+        const userCount = await tx.promotionRedemption.count({ where: { promotionId, userId } });
+        if (userCount >= (current.maxRedemptionsPerUser ?? 1)) {
+          throw new BadRequestError('You have already redeemed this promotion the maximum number of times');
+        }
+      }
+
+      return tx.promotionRedemption.create({
+        data: {
+          promotionId,
+          userId,
+          redemptionCode: code,
+          isVerified: false,
+        },
+      });
+    }, { isolationLevel: 'Serializable' });
+
+    const expiresAt = new Date(now.getTime() + REDEMPTION_EXPIRY_MINUTES * 60 * 1000);
 
     // Generate QR code pointing to dashboard verify URL
     const verifyUrl = `${DASHBOARD_BASE_URL}/verify?code=${code}`;
@@ -214,6 +220,7 @@ export class RedemptionsService {
         },
       },
       orderBy: { redeemedAt: 'desc' },
+      take: 200,
     });
   }
 

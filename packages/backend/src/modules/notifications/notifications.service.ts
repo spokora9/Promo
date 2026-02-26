@@ -23,12 +23,12 @@ export class NotificationsService {
   }
 
   static async markAsRead(notificationId: string, userId: string) {
-    const notification = await prisma.notification.findUnique({
-      where: { id: notificationId },
+    // Compound where prevents IDOR — only matches if both id and userId match
+    const notification = await prisma.notification.findFirst({
+      where: { id: notificationId, userId },
     });
 
     if (!notification) throw new NotFoundError('Notification not found');
-    if (notification.userId !== userId) throw new NotFoundError('Notification not found');
 
     return prisma.notification.update({
       where: { id: notificationId },
